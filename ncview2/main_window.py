@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt, QTimer
 from ncview2.data_model import DataModel
 from ncview2.spatial_canvas import SpatialCanvas
 from ncview2.timeseries_canvas import TimeseriesCanvas
+from ncview2.profile_canvas import ProfileCanvas
 from ncview2.controls import ControlPanel
 from ncview2.colormaps import all_colormaps, default_colormap
 
@@ -82,9 +83,21 @@ class MainWindow(QMainWindow):
 
         # Vertical splitter: spatial plot on top, timeseries below
         self.splitter = QSplitter(Qt.Vertical)
+
+        # Horizontal container: profile (left, hidden by default) + spatial (right)
+        self._spatial_container = QWidget()
+        spatial_h = QHBoxLayout(self._spatial_container)
+        spatial_h.setContentsMargins(0, 0, 0, 0)
+        spatial_h.setSpacing(0)
+        self.profile = ProfileCanvas()
+        self.profile.setVisible(False)
+        self.profile.setMaximumWidth(250)
+        spatial_h.addWidget(self.profile)
         self.spatial = SpatialCanvas()
+        spatial_h.addWidget(self.spatial, stretch=1)
+
         self.timeseries = TimeseriesCanvas()
-        self.splitter.addWidget(self.spatial)
+        self.splitter.addWidget(self._spatial_container)
         self.splitter.addWidget(self.timeseries)
         self.splitter.setSizes([500, 300])
         root.addWidget(self.splitter, stretch=1)
@@ -172,8 +185,11 @@ class MainWindow(QMainWindow):
         self._clicked_point = None
         self._area_bbox = None
         self.timeseries.clear_plot()
+        self.profile.clear_plot()
 
         self._is_unstructured = self.model.is_unstructured(varname)
+        self._profile_dim = self.model.profile_dim(varname)
+        self.profile.setVisible(self._profile_dim is not None)
 
         # Identify dimensions
         self.spatial_dims = self.model.spatial_dims(varname)
@@ -240,6 +256,8 @@ class MainWindow(QMainWindow):
             y = self.timeseries._y_data
             if 0 <= idx < len(y):
                 self.spatial._area_avg_value = float(y[idx])
+        # Refresh profile for new time step
+        self._refresh_profile()
 
     def _update_spatial(self):
         if not self.current_var or not self.model:
@@ -319,6 +337,7 @@ class MainWindow(QMainWindow):
             label = f"{y_dim}={y_str}, {x_dim}={x_str}"
             self.timeseries.plot(ts, point_label=label)
             self._update_timeseries_marker()
+            self._update_profile_point({y_dim: yi, x_dim: xi}, label)
         except Exception as exc:
             self.status.showMessage(f"Timeseries error: {exc}", 5000)
 
@@ -353,6 +372,8 @@ class MainWindow(QMainWindow):
             label = f"lat={lat_s}, lon={lon_s}"
             self.timeseries.plot(ts, point_label=label)
             self._update_timeseries_marker()
+            col_dim, = self.spatial_dims
+            self._update_profile_point({col_dim: col_idx}, label)
         except Exception as exc:
             self.status.showMessage(f"Timeseries error: {exc}", 5000)
 
@@ -360,6 +381,81 @@ class MainWindow(QMainWindow):
         if self.scan_dims:
             idx = self.controls.get_dim_index(self.scan_dims[0])
             self.timeseries.mark_time(idx)
+
+    # ── Profile helpers ──────────────────────────────────────────
+
+    def _get_time_sel(self):
+        """Return {time_dim: index} for the current time slider position."""
+        if not self.scan_dims:
+            return {}
+        roles = self.model.dim_roles(self.current_var)
+        for d in self.scan_dims:
+            if roles.get(d) == "time":
+                return {d: self.controls.get_dim_index(d)}
+        return {self.scan_dims[0]: self.controls.get_dim_index(self.scan_dims[0])}
+
+    def _update_profile_point(self, spatial_sel, label):
+        """Show profile for a clicked point, if a profile dim exists."""
+        if not self._profile_dim:
+            return
+        try:
+            result = self.model.get_profile(
+                self.current_var, spatial_sel, self._get_time_sel(),
+            )
+            if result is None:
+                return
+            values, levels, dim_name, level_units = result
+            var_meta = self.model.ds[self.current_var]
+            var_units = var_meta.attrs.get("units", "")
+            var_name = var_meta.attrs.get("long_name", self.current_var)
+            self.profile.plot(values, levels, dim_name, var_name, var_units, level_units, label)
+        except Exception:
+            pass
+
+    def _update_profile_area(self, bbox, label):
+        """Show area-averaged profile, if a profile dim exists."""
+        if not self._profile_dim:
+            return
+        try:
+            result = self.model.get_area_average_profile(
+                self.current_var, bbox, self._get_time_sel(),
+            )
+            if result is None:
+                return
+            values, levels, dim_name, level_units = result
+            var_meta = self.model.ds[self.current_var]
+            var_units = var_meta.attrs.get("units", "")
+            var_name = var_meta.attrs.get("long_name", self.current_var)
+            self.profile.plot(values, levels, dim_name, var_name, var_units, level_units, label)
+        except Exception:
+            pass
+
+    def _refresh_profile(self):
+        """Refresh profile values when a dim slider changes."""
+        if not self._profile_dim or not self.profile._has_data:
+            return
+        try:
+            if self._clicked_point:
+                yi, xi = self._clicked_point
+                if self._is_unstructured:
+                    col_dim, = self.spatial_dims
+                    spatial_sel = {col_dim: xi}
+                else:
+                    y_dim, x_dim = self.spatial_dims
+                    spatial_sel = {y_dim: yi, x_dim: xi}
+                result = self.model.get_profile(
+                    self.current_var, spatial_sel, self._get_time_sel(),
+                )
+            elif self._area_bbox:
+                result = self.model.get_area_average_profile(
+                    self.current_var, self._area_bbox, self._get_time_sel(),
+                )
+            else:
+                return
+            if result is not None:
+                self.profile.update_values(result[0])
+        except Exception:
+            pass
 
     # ── Area-average timeseries ──────────────────────────────────
 
@@ -399,6 +495,7 @@ class MainWindow(QMainWindow):
         )
         self.timeseries.plot(ts, point_label=label)
         self._update_timeseries_marker()
+        self._update_profile_area(bbox, label)
         self.status.showMessage(label, 5000)
 
     def _on_timeseries_clicked(self, index):

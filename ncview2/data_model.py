@@ -164,6 +164,110 @@ class DataModel:
         """
         return self.ds[varname].isel(spatial_sel)
 
+    def profile_dim(self, varname):
+        """Return the non-time scan dimension suitable for vertical profiles, or None.
+
+        For a var with dims (time, levgrnd, ncol), scan_dims=[time, levgrnd],
+        so the profile dim is levgrnd (the second scan dim).
+        """
+        scan = self.scan_dims(varname)
+        roles = self.dim_roles(varname)
+        for d in scan:
+            if roles.get(d) != "time":
+                return d
+        return None
+
+    def get_profile(self, varname, spatial_sel, time_sel):
+        """Extract a 1D profile along the profile dim at a point.
+
+        spatial_sel: {dim: index} for spatial dims.
+        time_sel: {dim: index} for the time dim.
+        Returns: (values_1d, levels_1d, dim_name, level_units)
+        """
+        pdim = self.profile_dim(varname)
+        if pdim is None:
+            return None
+        sel = {}
+        sel.update(spatial_sel)
+        sel.update(time_sel)
+        data = self.ds[varname].isel(sel)
+        values = data.values.astype(float)
+        levels = self.dim_coord_values(pdim)
+        if levels is None:
+            levels = np.arange(self.dim_size(varname, pdim), dtype=float)
+        level_units = ""
+        if pdim in self.ds.coords:
+            level_units = self.ds.coords[pdim].attrs.get("units", "")
+        return values, levels.astype(float), pdim, level_units
+
+    def get_area_average_profile(self, varname, bbox, time_sel):
+        """Extract an area-averaged 1D profile along the profile dim.
+
+        bbox: (lon_min, lon_max, lat_min, lat_max)
+        time_sel: {dim: index} for the time dim.
+        Returns: (values_1d, levels_1d, dim_name, level_units)
+        """
+        pdim = self.profile_dim(varname)
+        if pdim is None:
+            return None
+        lon_min, lon_max, lat_min, lat_max = bbox
+
+        if self.is_unstructured(varname):
+            (col_dim,) = self.spatial_dims(varname)
+            lat, lon = self.get_unstructured_latlon(varname)
+            if lat is None or lon is None:
+                return None
+            lon = (np.asarray(lon, dtype=float) + 180.0) % 360.0 - 180.0
+            lat = np.asarray(lat, dtype=float)
+            mask = (lat >= lat_min) & (lat <= lat_max) & (lon >= lon_min) & (lon <= lon_max)
+            col_idx = np.where(mask)[0]
+            if col_idx.size == 0:
+                return None
+            if col_idx.size > self.MAX_AREA_CELLS:
+                rng = np.random.default_rng(0)
+                col_idx = rng.choice(col_idx, self.MAX_AREA_CELLS, replace=False)
+            sel = {col_dim: col_idx}
+            sel.update(time_sel)
+            sub = self.ds[varname].isel(sel)
+            weights = np.cos(np.deg2rad(lat[col_idx]))
+            values = (sub * weights).sum(dim=col_dim).values / weights.sum()
+        else:
+            y_dim, x_dim = self.spatial_dims(varname)
+            lat_vals = self.dim_coord_values(y_dim)
+            lon_vals = self.dim_coord_values(x_dim)
+            if lat_vals is None or lon_vals is None:
+                return None
+            yi = np.where((lat_vals >= lat_min) & (lat_vals <= lat_max))[0]
+            xi = np.where((lon_vals >= lon_min) & (lon_vals <= lon_max))[0]
+            if yi.size == 0 or xi.size == 0:
+                return None
+            n_cells = yi.size * xi.size
+            if n_cells > self.MAX_AREA_CELLS:
+                rng = np.random.default_rng(0)
+                target = max(1, int(np.sqrt(self.MAX_AREA_CELLS)))
+                if yi.size > target:
+                    yi = rng.choice(yi, target, replace=False); yi.sort()
+                if xi.size > target:
+                    xi = rng.choice(xi, target, replace=False); xi.sort()
+            sel = {y_dim: yi, x_dim: xi}
+            sel.update(time_sel)
+            sub = self.ds[varname].isel(sel)
+            weights_1d = np.cos(np.deg2rad(lat_vals[yi]))
+            import xarray as xr
+            weight_da = xr.DataArray(
+                np.broadcast_to(weights_1d[:, np.newaxis], (len(yi), len(xi))),
+                dims=[y_dim, x_dim],
+            )
+            values = ((sub * weight_da).sum(dim=[y_dim, x_dim]) / weight_da.sum()).values
+
+        levels = self.dim_coord_values(pdim)
+        if levels is None:
+            levels = np.arange(self.dim_size(varname, pdim), dtype=float)
+        level_units = ""
+        if pdim in self.ds.coords:
+            level_units = self.ds.coords[pdim].attrs.get("units", "")
+        return values.astype(float), levels.astype(float), pdim, level_units
+
     # ── Area-average timeseries ──────────────────────────────────
 
     MAX_AREA_CELLS = 500  # subsample above this to keep it fast
