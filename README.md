@@ -7,6 +7,9 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 
 - **Instant open**: `ncview2 file.nc` shows the first plottable variable immediately
 - **Click for timeseries**: click any point on the spatial plot to extract a timeseries
+- **Area Average**: click and drag to calculate an area average for the line plot
+- **Support non-uniform grids**: Delauney traingulation map plot
+- **Multi-file wildcard support**: fast loading of multiple history files using h5py
 - **Animate**: play/pause/step through time (or any scannable dimension)
 - **Modern colormaps**: perceptually uniform (viridis, etc.) + ocean-specific (cmocean)
 - **Auto-detect geography**: coastlines and land overlay when lat/lon are detected (cartopy)
