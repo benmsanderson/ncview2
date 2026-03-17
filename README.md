@@ -8,6 +8,7 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 - **Instant open**: `ncview2 file.nc` shows the first plottable variable immediately
 - **Click for timeseries**: click any point on the spatial plot to extract a timeseries
 - **Area Average**: click and drag to calculate an area average for the line plot
+- **Vertical profiles**: 3D variables with a vertical cooordinate will display a vertical profile
 - **Support non-uniform grids**: Delauney traingulation map plot
 - **Multi-file wildcard support**: fast loading of multiple history files using h5py
 - **Animate**: play/pause/step through time (or any scannable dimension)
