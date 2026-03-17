@@ -58,39 +58,36 @@ git clone https://github.com/YOURUSERNAME/ncview2.git
 cd ncview2
 ```
 
-**Step 2: Run the installer (automated)**
+**Step 2: Run the installer**
 ```bash
-./install_nird.sh
-```
-
-Or manually:
-```bash
+# Temporarily load modules for installation
 module load Anaconda3/2023.07-2
 module load GEOS/3.11.1-GCC-12.2.0
 module load PROJ/9.2.0-GCCcore-12.3.0
 module load X11/20221110-GCCcore-12.2.0
-python -m pip install --user -e .
-python -m pip install --user cartopy cmocean
+
+# Run installer (creates wrapper that auto-loads modules)
+./install_nird.sh
 ```
 
-**Step 3: Make permanent (add to ~/.bashrc)**
+**Step 3: Add to PATH (add to ~/.bashrc for persistence)**
 ```bash
-echo 'module load Anaconda3/2023.07-2' >> ~/.bashrc
-echo 'module load GEOS/3.11.1-GCC-12.2.0' >> ~/.bashrc
-echo 'module load PROJ/9.2.0-GCCcore-12.3.0' >> ~/.bashrc
-echo 'module load X11/20221110-GCCcore-12.2.0' >> ~/.bashrc
+export PATH="$HOME/.local/bin:$PATH"
+
+# Make permanent:
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
 ```
 
-**Step 4: Connect with X11 forwarding**
+**Step 4: For GUI (X11 forwarding required)**
 
-When SSH'ing to NIRD, use the `-X` flag:
+If using **SSH**:
 ```bash
 ssh -X username@login.nird.sigma2.no
 ```
 
-**Done.** Run `ncview2 yourfile.nc`
+If using **VS Code Remote**: The GUI should work automatically via VS Code's forwarding.
+
+**Done.** Run `ncview2 yourfile.nc` from any terminal. The wrapper auto-loads modules.
 
 ### Install the wrapper script to use anywhere (optional)
 
