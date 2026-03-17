@@ -32,7 +32,7 @@ pip install -e .
 pip install -e ".[geo]"
 ```
 
-### 2. Install the wrapper script (optional, recommended)
+### 2. Install the wrapper script to use anywhere (optional)
 
 This lets you run `ncview2` from any terminal without activating the
 environment first — just like the original ncview:
