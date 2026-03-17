@@ -105,11 +105,11 @@ ncview2 test_data.nc
 
 | Package | Required | Purpose |
 |---|---|---|
-| xarray | ✅ | NetCDF reading, CF conventions, lazy slicing |
-| netCDF4 | ✅ | NetCDF4/HDF5 backend for xarray |
-| numpy | ✅ | Array operations |
-| matplotlib | ✅ | Spatial plots, timeseries, colorbars |
-| PySide6 | ✅ | Qt6 GUI framework |
+| xarray | yes | NetCDF reading, CF conventions, lazy slicing |
+| netCDF4 | yes | NetCDF4/HDF5 backend for xarray |
+| numpy | yes | Array operations |
+| matplotlib | yes | Spatial plots, timeseries, colorbars |
+| PySide6 | yes | Qt6 GUI framework |
 | cartopy | optional | Map projections, coastlines |
 | cmocean | optional | Ocean-specific colormaps |
 
