@@ -54,7 +54,7 @@ pip install -e ".[geo]"
 **Step 1: Clone the repository**
 ```bash
 cd ~
-git clone https://github.com/YOURUSERNAME/ncview2.git
+git clone https://github.com/benmsanderson/ncview2.git
 cd ncview2
 ```
 
