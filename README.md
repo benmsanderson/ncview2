@@ -49,6 +49,40 @@ pip install -e .
 pip install -e ".[geo]"
 ```
 
+### Option C: NIRD/HPC Installation
+
+**Step 1: Clone the repository**
+```bash
+cd ~
+git clone https://github.com/YOURUSERNAME/ncview2.git
+cd ncview2
+```
+
+**Step 2: Run the installer (automated)**
+```bash
+./install_nird.sh
+```
+
+Or manually:
+```bash
+module load Anaconda3/2023.07-2
+module load GEOS/3.11.1-GCC-12.2.0
+module load PROJ/9.2.0-GCCcore-12.3.0
+python -m pip install --user -e .
+python -m pip install --user cartopy cmocean
+```
+
+**Step 3: Make permanent (add to ~/.bashrc)**
+```bash
+echo 'module load Anaconda3/2023.07-2' >> ~/.bashrc
+echo 'module load GEOS/3.11.1-GCC-12.2.0' >> ~/.bashrc
+echo 'module load PROJ/9.2.0-GCCcore-12.3.0' >> ~/.bashrc
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Done.** Open a new terminal and run `ncview2 yourfile.nc`
+
 ### Install the wrapper script to use anywhere (optional)
 
 This lets you run `ncview2` from any terminal without activating the
