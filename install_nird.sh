@@ -31,6 +31,9 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
+# Force Qt to use PySide6 plugins (not Anaconda's Qt5 plugins)
+export QT_PLUGIN_PATH="$HOME/.local/lib/python3.11/site-packages/PySide6/Qt/plugins"
+
 # Run ncview2
 exec /nird/services/software/nird/sw/software/Anaconda3/2023.07-2/bin/python -m ncview2 "$@"
 WRAPPER_EOF

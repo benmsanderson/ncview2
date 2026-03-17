@@ -25,16 +25,15 @@ class DataModel:
 
         self.paths = paths
         self._multi = len(paths) > 1
-        time_coder = xr.coders.CFDatetimeCoder(use_cftime=True)
 
         if not self._multi:
             self.ds = xr.open_dataset(
-                str(paths[0]), decode_times=time_coder, decode_timedelta=False,
+                str(paths[0]), decode_times=True, decode_timedelta=False,
             )
         else:
             # Open first file for metadata (variable list, attrs, coords)
             self.ds = xr.open_dataset(
-                str(paths[0]), decode_times=time_coder, decode_timedelta=False,
+                str(paths[0]), decode_times=True, decode_timedelta=False,
             )
             self._build_multifile_index()
 
