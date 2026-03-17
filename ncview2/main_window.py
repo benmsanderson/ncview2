@@ -144,9 +144,10 @@ class MainWindow(QMainWindow):
         if path:
             self.open_file(path)
 
-    def open_file(self, path):
+    def open_file(self, paths):
+        """Open one or more NetCDF files. *paths* can be a string or a list."""
         try:
-            new_model = DataModel(path)
+            new_model = DataModel(paths)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to open file:\n{exc}")
             return
@@ -171,7 +172,7 @@ class MainWindow(QMainWindow):
             self.status.showMessage("No plottable variables found in this file.")
 
         self.status.showMessage(
-            f"Opened {path} — {len(variables)} plottable variable(s)", 5000
+            f"Opened {self.model.filename} — {len(variables)} plottable variable(s)", 5000
         )
 
     # ── Variable selection ───────────────────────────────────────
@@ -309,7 +310,7 @@ class MainWindow(QMainWindow):
         sel[y_dim] = yi
         sel[x_dim] = xi
         try:
-            val = float(self.model.ds[self.current_var].isel(sel).values)
+            val = self.model.get_value(self.current_var, sel)
             y_coords = self.model.dim_coord_values(y_dim)
             x_coords = self.model.dim_coord_values(x_dim)
             y_val = f"{y_coords[yi]:.4g}" if y_coords is not None else str(yi)
@@ -348,7 +349,7 @@ class MainWindow(QMainWindow):
         sel = dict(self.controls.get_dim_indices())
         sel[col_dim] = col_idx
         try:
-            val = float(self.model.ds[self.current_var].isel(sel).values)
+            val = self.model.get_value(self.current_var, sel)
             lat_v = f"{lat[col_idx]:.2f}" if lat is not None else "?"
             lon_v = f"{lon[col_idx]:.2f}" if lon is not None else "?"
             self.status.showMessage(f"lat={lat_v}, lon={lon_v} (col {col_idx}) → {val:.6g}")

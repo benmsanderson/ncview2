@@ -54,6 +54,9 @@ ncview2 file.nc
 # Or via python -m
 python -m ncview2 file.nc
 
+# Open multiple sequential files (concatenated along time)
+ncview2 run.cam.h0.*.nc
+
 # No arguments → file dialog
 ncview2
 ```
@@ -103,6 +106,24 @@ ncview2/
 ├── controls.py          # Animation buttons, dimension sliders, options
 └── colormaps.py         # Colormap registry and auto-selection
 ```
+
+## How multi-file loading works
+
+When you pass multiple files (e.g. `ncview2 run.cam.h0.084*.nc`), ncview2
+avoids the slow `xr.open_mfdataset` path. Instead:
+
+1. **First file only** is opened with xarray to get variable metadata,
+   coordinates, attributes, and grid structure (~1 s).
+2. **All files** are scanned with h5py to read just the time coordinate
+   and build a global time index — mapping each global timestep to a
+   (file, local index) pair (~0.5 s for 60 files).
+3. **Data reads** go through h5py directly to the correct file, so
+   fetching a spatial slice or a point timeseries across 60 files takes
+   well under a second.
+
+Corrupt or truncated files are silently skipped during the scan.
+Fill values (`_FillValue`) are converted to NaN for color-range
+calculations so outliers don't blow out the color scale.
 
 ## License
 

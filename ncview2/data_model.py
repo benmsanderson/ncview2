@@ -1,5 +1,6 @@
 """Data model — xarray-based NetCDF loading and slicing."""
 
+import os
 import numpy as np
 import xarray as xr
 from pathlib import Path
@@ -15,19 +16,102 @@ _UNSTRUCTURED_DIM_NAMES = frozenset({"ncol", "ncells", "nfaces", "cell", "ngrid"
 class DataModel:
     """Manages an open NetCDF dataset and provides slicing operations."""
 
-    def __init__(self, path):
-        self.path = Path(path)
-        # Use cftime for dates outside nanosecond range; skip timedelta decoding
-        # to avoid overflow on variables like SNOW_PERSISTENCE.
+    def __init__(self, paths):
+        # Accept a single path or a list of paths.
+        if isinstance(paths, (str, Path)):
+            paths = [Path(paths)]
+        else:
+            paths = sorted(Path(p) for p in paths)
+
+        self.paths = paths
+        self._multi = len(paths) > 1
         time_coder = xr.coders.CFDatetimeCoder(use_cftime=True)
-        self.ds = xr.open_dataset(str(path), decode_times=time_coder, decode_timedelta=False)
+
+        if not self._multi:
+            self.ds = xr.open_dataset(
+                str(paths[0]), decode_times=time_coder, decode_timedelta=False,
+            )
+        else:
+            # Open first file for metadata (variable list, attrs, coords)
+            self.ds = xr.open_dataset(
+                str(paths[0]), decode_times=time_coder, decode_timedelta=False,
+            )
+            self._build_multifile_index()
+
+    def _build_multifile_index(self):
+        """Build time-to-file mapping using h5py for speed."""
+        import h5py
+
+        # Detect time dimension name
+        self._time_dim = None
+        for d in self.ds.dims:
+            if d.lower() in TIME_NAMES or (
+                d in self.ds.coords and np.issubdtype(self.ds[d].dtype, np.datetime64)
+            ):
+                self._time_dim = d
+                break
+
+        offsets = []      # [(global_start, global_end, file_idx), ...]
+        time_raw = []     # raw numeric time values from each file
+        valid_paths = []  # paths that opened successfully
+        total = 0
+
+        for i, p in enumerate(self.paths):
+            try:
+                with h5py.File(str(p), "r") as h:
+                    if self._time_dim and self._time_dim in h:
+                        n = h[self._time_dim].shape[0]
+                        time_raw.append(h[self._time_dim][:])
+                    else:
+                        n = 1
+                        time_raw.append(np.array([total], dtype=float))
+            except OSError:
+                continue  # skip truncated/corrupt files
+            offsets.append((total, total + n, i))
+            valid_paths.append(p)
+            total += n
+
+        self._file_offsets = offsets
+        self._total_time = total
+        self.paths = valid_paths
+
+        # Decode concatenated time coordinate
+        raw = np.concatenate(time_raw)
+        if self._time_dim and self._time_dim in self.ds.coords:
+            units = (self.ds[self._time_dim].encoding.get("units")
+                     or self.ds[self._time_dim].attrs.get("units", ""))
+            calendar = (self.ds[self._time_dim].encoding.get("calendar")
+                        or self.ds[self._time_dim].attrs.get("calendar", "standard"))
+            if units:
+                import cftime
+                self._time_values = np.array(cftime.num2date(raw, units, calendar))
+            else:
+                self._time_values = raw
+        else:
+            self._time_values = raw
+
+    def _file_for_time(self, global_idx):
+        """Return (path_index_in_self.paths, local_time_index)."""
+        for start, end, fi in self._file_offsets:
+            if start <= global_idx < end:
+                return fi, global_idx - start
+        raise IndexError(f"Time index {global_idx} out of range (0–{self._total_time - 1})")
+
+    def _h5_read(self, file_idx, varname, sel_tuple):
+        """Read a slice from a file using h5py. sel_tuple is a tuple of index objects."""
+        import h5py
+        with h5py.File(str(self.paths[file_idx]), "r") as h:
+            return np.asarray(h[varname][sel_tuple], dtype=float)
 
     def close(self):
         self.ds.close()
 
     @property
     def filename(self):
-        return self.path.name
+        if len(self.paths) == 1:
+            return self.paths[0].name
+        common = os.path.commonprefix([p.name for p in self.paths])
+        return f"{common}... ({len(self.paths)} files)"
 
     @property
     def plottable_variables(self):
@@ -142,27 +226,105 @@ class DataModel:
         return list(self.ds[varname].dims[:-2])
 
     def dim_size(self, varname, dim):
+        if self._multi and dim == self._time_dim:
+            return self._total_time
         return self.ds[varname].sizes[dim]
 
     def dim_coord_values(self, dim):
         """Get coordinate values for a dimension, or None if no coords exist."""
+        if self._multi and dim == self._time_dim:
+            return self._time_values
         if dim in self.ds.coords:
             return self.ds.coords[dim].values
         return None
 
     def get_slice(self, varname, index_sel):
-        """Get a 2D DataArray by selecting integer indices on non-spatial dims.
+        """Get a 2D DataArray by selecting integer indices on non-spatial dims."""
+        if not self._multi:
+            return self.ds[varname].isel(index_sel)
 
-        index_sel: {dim_name: int_index} for each scan dimension.
-        """
-        return self.ds[varname].isel(index_sel)
+        # Multi-file: map time index to the right file
+        local_sel = dict(index_sel)
+        if self._time_dim and self._time_dim in local_sel:
+            fi, local_t = self._file_for_time(local_sel[self._time_dim])
+            local_sel[self._time_dim] = local_t
+        else:
+            fi = 0
+
+        # Build h5py index tuple in dimension order
+        var = self.ds[varname]
+        sel_tuple = tuple(local_sel.get(d, slice(None)) for d in var.dims)
+        data = self._h5_read(fi, varname, sel_tuple)
+
+        # Wrap in DataArray with reference coords for spatial dims
+        spatial = self.spatial_dims(varname)
+        coords = {}
+        for d in spatial:
+            cv = self.dim_coord_values(d)
+            if cv is not None:
+                coords[d] = cv
+        remaining_dims = [d for d in var.dims if d not in index_sel]
+        return xr.DataArray(data, dims=remaining_dims, coords=coords)
 
     def get_timeseries(self, varname, spatial_sel):
-        """Get a DataArray with spatial dims indexed out.
+        """Get a DataArray with spatial dims indexed out."""
+        if not self._multi:
+            return self.ds[varname].isel(spatial_sel)
 
-        spatial_sel: {dim_name: int_index} for spatial (and optionally extra) dims.
-        """
-        return self.ds[varname].isel(spatial_sel)
+        # Multi-file: read the point from each file via h5py
+        var = self.ds[varname]
+        # Build per-dim selectors (spatial dims are fixed, time dim is full)
+        dim_sels = {}
+        for d in var.dims:
+            if d in spatial_sel:
+                dim_sels[d] = spatial_sel[d]
+            elif d == self._time_dim:
+                dim_sels[d] = "time"  # marker
+            else:
+                dim_sels[d] = slice(None)
+
+        chunks = []
+        for start, end, fi in self._file_offsets:
+            n = end - start
+            sel_tuple = []
+            for d in var.dims:
+                if d == self._time_dim:
+                    sel_tuple.append(slice(None))  # all local timesteps
+                elif d in spatial_sel:
+                    sel_tuple.append(spatial_sel[d])
+                else:
+                    sel_tuple.append(slice(None))
+            arr = self._h5_read(fi, varname, tuple(sel_tuple))
+            chunks.append(arr)
+
+        values = np.concatenate(chunks, axis=0) if len(chunks[0].shape) > 0 else np.array(chunks)
+        # Find remaining dims (those not indexed by a scalar in spatial_sel)
+        remaining_dims = []
+        remaining_coords = {}
+        for d in var.dims:
+            if d in spatial_sel and np.ndim(spatial_sel[d]) == 0:
+                continue
+            remaining_dims.append(d)
+            if d == self._time_dim:
+                remaining_coords[d] = self._time_values
+            else:
+                cv = self.dim_coord_values(d)
+                if cv is not None:
+                    remaining_coords[d] = cv
+        return xr.DataArray(values, dims=remaining_dims, coords=remaining_coords)
+
+    def get_value(self, varname, index_sel):
+        """Read a single scalar value at the given indices. Multi-file aware."""
+        if not self._multi:
+            return float(self.ds[varname].isel(index_sel).values)
+        local_sel = dict(index_sel)
+        fi = 0
+        if self._time_dim and self._time_dim in local_sel:
+            fi, local_t = self._file_for_time(local_sel[self._time_dim])
+            local_sel[self._time_dim] = local_t
+        var = self.ds[varname]
+        sel_tuple = tuple(local_sel.get(d, slice(None)) for d in var.dims)
+        return float(self._h5_read(fi, varname, sel_tuple))
 
     def profile_dim(self, varname):
         """Return the non-time scan dimension suitable for vertical profiles, or None.
@@ -187,11 +349,25 @@ class DataModel:
         pdim = self.profile_dim(varname)
         if pdim is None:
             return None
-        sel = {}
-        sel.update(spatial_sel)
-        sel.update(time_sel)
-        data = self.ds[varname].isel(sel)
-        values = data.values.astype(float)
+
+        if not self._multi:
+            sel = {}
+            sel.update(spatial_sel)
+            sel.update(time_sel)
+            data = self.ds[varname].isel(sel)
+            values = data.values.astype(float)
+        else:
+            sel = {}
+            sel.update(spatial_sel)
+            sel.update(time_sel)
+            fi = 0
+            if self._time_dim and self._time_dim in sel:
+                fi, local_t = self._file_for_time(sel[self._time_dim])
+                sel[self._time_dim] = local_t
+            var = self.ds[varname]
+            sel_tuple = tuple(sel.get(d, slice(None)) for d in var.dims)
+            values = self._h5_read(fi, varname, sel_tuple)
+
         levels = self.dim_coord_values(pdim)
         if levels is None:
             levels = np.arange(self.dim_size(varname, pdim), dtype=float)
@@ -201,16 +377,18 @@ class DataModel:
         return values, levels.astype(float), pdim, level_units
 
     def get_area_average_profile(self, varname, bbox, time_sel):
-        """Extract an area-averaged 1D profile along the profile dim.
-
-        bbox: (lon_min, lon_max, lat_min, lat_max)
-        time_sel: {dim: index} for the time dim.
-        Returns: (values_1d, levels_1d, dim_name, level_units)
-        """
+        """Extract an area-averaged 1D profile along the profile dim."""
         pdim = self.profile_dim(varname)
         if pdim is None:
             return None
         lon_min, lon_max, lat_min, lat_max = bbox
+
+        # Map time to correct file for multi-file
+        local_time_sel = dict(time_sel)
+        fi = 0
+        if self._multi and self._time_dim and self._time_dim in local_time_sel:
+            fi, local_t = self._file_for_time(local_time_sel[self._time_dim])
+            local_time_sel[self._time_dim] = local_t
 
         if self.is_unstructured(varname):
             (col_dim,) = self.spatial_dims(varname)
@@ -226,11 +404,21 @@ class DataModel:
             if col_idx.size > self.MAX_AREA_CELLS:
                 rng = np.random.default_rng(0)
                 col_idx = rng.choice(col_idx, self.MAX_AREA_CELLS, replace=False)
-            sel = {col_dim: col_idx}
-            sel.update(time_sel)
-            sub = self.ds[varname].isel(sel)
             weights = np.cos(np.deg2rad(lat[col_idx]))
-            values = (sub * weights).sum(dim=col_dim).values / weights.sum()
+
+            if self._multi:
+                var = self.ds[varname]
+                sel = dict(local_time_sel)
+                sel[col_dim] = col_idx
+                sel_tuple = tuple(sel.get(d, slice(None)) for d in var.dims)
+                sub = self._h5_read(fi, varname, sel_tuple)
+                # Average over column axis (last axis)
+                values = (sub * weights).sum(axis=-1) / weights.sum()
+            else:
+                sel = {col_dim: col_idx}
+                sel.update(local_time_sel)
+                sub = self.ds[varname].isel(sel)
+                values = (sub * weights).sum(dim=col_dim).values / weights.sum()
         else:
             y_dim, x_dim = self.spatial_dims(varname)
             lat_vals = self.dim_coord_values(y_dim)
@@ -249,16 +437,24 @@ class DataModel:
                     yi = rng.choice(yi, target, replace=False); yi.sort()
                 if xi.size > target:
                     xi = rng.choice(xi, target, replace=False); xi.sort()
-            sel = {y_dim: yi, x_dim: xi}
-            sel.update(time_sel)
-            sub = self.ds[varname].isel(sel)
-            weights_1d = np.cos(np.deg2rad(lat_vals[yi]))
-            import xarray as xr
-            weight_da = xr.DataArray(
-                np.broadcast_to(weights_1d[:, np.newaxis], (len(yi), len(xi))),
-                dims=[y_dim, x_dim],
+            weights_2d = np.broadcast_to(
+                np.cos(np.deg2rad(lat_vals[yi]))[:, np.newaxis], (len(yi), len(xi))
             )
-            values = ((sub * weight_da).sum(dim=[y_dim, x_dim]) / weight_da.sum()).values
+
+            if self._multi:
+                var = self.ds[varname]
+                sel = dict(local_time_sel)
+                sel[y_dim] = yi
+                sel[x_dim] = xi
+                sel_tuple = tuple(sel.get(d, slice(None)) for d in var.dims)
+                sub = self._h5_read(fi, varname, sel_tuple)
+                values = (sub * weights_2d).sum(axis=(-2, -1)) / weights_2d.sum()
+            else:
+                sel = {y_dim: yi, x_dim: xi}
+                sel.update(local_time_sel)
+                sub = self.ds[varname].isel(sel)
+                weight_da = xr.DataArray(weights_2d, dims=[y_dim, x_dim])
+                values = ((sub * weight_da).sum(dim=[y_dim, x_dim]) / weight_da.sum()).values
 
         levels = self.dim_coord_values(pdim)
         if levels is None:
@@ -312,10 +508,8 @@ class DataModel:
             raise ValueError("No grid cells in selected area")
 
         n_cells = yi.size * xi.size
-        # Subsample if too many cells
         if n_cells > self.MAX_AREA_CELLS:
             rng = np.random.default_rng(0)
-            # Subsample each axis independently to keep it rectangular
             target_per_axis = max(1, int(np.sqrt(self.MAX_AREA_CELLS)))
             if yi.size > target_per_axis:
                 yi = rng.choice(yi, target_per_axis, replace=False)
@@ -325,23 +519,35 @@ class DataModel:
                 xi.sort()
             n_cells = yi.size * xi.size
 
-        sel = {y_dim: yi, x_dim: xi}
-        if extra_sel:
-            sel.update(extra_sel)
-
-        sub = self.ds[varname].isel(sel)
-
-        # cos(lat) weights — broadcast over x dim
         weights = np.cos(np.deg2rad(lat_vals[yi]))
-        # Build an xarray-compatible weight array along spatial dims only
-        weight_da = xr.DataArray(
-            np.broadcast_to(weights[:, np.newaxis], (len(yi), len(xi))),
-            dims=[y_dim, x_dim],
-        )
-        # Weight and average over spatial dims
-        weighted = (sub * weight_da).sum(dim=[y_dim, x_dim])
-        total_w = weight_da.sum(dim=[y_dim, x_dim])
-        ts = weighted / total_w
+        weight_2d = np.broadcast_to(weights[:, np.newaxis], (len(yi), len(xi)))
+        total_w = float(weight_2d.sum())
+
+        if not self._multi:
+            sel = {y_dim: yi, x_dim: xi}
+            if extra_sel:
+                sel.update(extra_sel)
+            sub = self.ds[varname].isel(sel)
+            weight_da = xr.DataArray(weight_2d, dims=[y_dim, x_dim])
+            weighted = (sub * weight_da).sum(dim=[y_dim, x_dim])
+            ts = weighted / weight_da.sum(dim=[y_dim, x_dim])
+        else:
+            var = self.ds[varname]
+            chunks = []
+            for start, end, fi in self._file_offsets:
+                sel = {}
+                sel[y_dim] = yi
+                sel[x_dim] = xi
+                if extra_sel:
+                    sel.update(extra_sel)
+                sel_tuple = tuple(sel.get(d, slice(None)) for d in var.dims)
+                sub = self._h5_read(fi, varname, sel_tuple)
+                # sub shape: (n_time_local, [n_levels,] n_yi, n_xi) — average over last two
+                avg = (sub * weight_2d).sum(axis=(-2, -1)) / total_w
+                chunks.append(avg)
+            values = np.concatenate(chunks, axis=0)
+            ts = xr.DataArray(values, dims=[self._time_dim],
+                              coords={self._time_dim: self._time_values})
 
         return ts, n_cells
 
@@ -352,7 +558,6 @@ class DataModel:
         if lat is None or lon is None:
             raise ValueError("Cannot determine lat/lon for unstructured grid")
 
-        # Normalize lons to -180..180 to match spatial canvas
         lon = (np.asarray(lon, dtype=float) + 180.0) % 360.0 - 180.0
         lat = np.asarray(lat, dtype=float)
 
@@ -361,51 +566,83 @@ class DataModel:
         if col_idx.size == 0:
             raise ValueError("No grid cells in selected area")
 
-        # Subsample if too many columns
         if col_idx.size > self.MAX_AREA_CELLS:
             rng = np.random.default_rng(0)
             col_idx = rng.choice(col_idx, self.MAX_AREA_CELLS, replace=False)
             col_idx.sort()
 
         n_cells = col_idx.size
-
-        sel = {col_dim: col_idx}
-        if extra_sel:
-            sel.update(extra_sel)
-
-        sub = self.ds[varname].isel(sel)
-
         weights = np.cos(np.deg2rad(lat[col_idx]))
-        ts = (sub * weights).sum(dim=col_dim) / weights.sum()
+        total_w = float(weights.sum())
+
+        if not self._multi:
+            sel = {col_dim: col_idx}
+            if extra_sel:
+                sel.update(extra_sel)
+            sub = self.ds[varname].isel(sel)
+            ts = (sub * weights).sum(dim=col_dim) / weights.sum()
+        else:
+            var = self.ds[varname]
+            chunks = []
+            for start, end, fi in self._file_offsets:
+                sel = {col_dim: col_idx}
+                if extra_sel:
+                    sel.update(extra_sel)
+                sel_tuple = tuple(sel.get(d, slice(None)) for d in var.dims)
+                sub = self._h5_read(fi, varname, sel_tuple)
+                avg = (sub * weights).sum(axis=-1) / total_w
+                chunks.append(avg)
+            values = np.concatenate(chunks, axis=0)
+            ts = xr.DataArray(values, dims=[self._time_dim],
+                              coords={self._time_dim: self._time_values})
 
         return ts, n_cells
 
     def get_global_range(self, varname):
         """Compute robust min/max using percentiles to ignore outliers/fill values."""
-        var = self.ds[varname]
-        if var.size < 10_000_000:
-            arr = var.values.ravel()
-        else:
-            # Sample first, middle, and last slices along the first dim
-            scan = self.scan_dims(varname)
-            if scan:
-                first_dim = scan[0]
-                n = self.dim_size(varname, first_dim)
-                indices = sorted(set([0, n // 2, n - 1]))
-                samples = [var.isel({first_dim: i}).values for i in indices]
-                arr = np.concatenate([s.ravel() for s in samples])
-            else:
+        if not self._multi:
+            var = self.ds[varname]
+            if var.size < 10_000_000:
                 arr = var.values.ravel()
+            else:
+                scan = self.scan_dims(varname)
+                if scan:
+                    first_dim = scan[0]
+                    n = self.dim_size(varname, first_dim)
+                    indices = sorted(set([0, n // 2, n - 1]))
+                    samples = [var.isel({first_dim: i}).values for i in indices]
+                    arr = np.concatenate([s.ravel() for s in samples])
+                else:
+                    arr = var.values.ravel()
+        else:
+            # Multi-file: sample from first, middle, and last files
+            import h5py
+            sample_fis = sorted(set([
+                self._file_offsets[0][2],
+                self._file_offsets[len(self._file_offsets) // 2][2],
+                self._file_offsets[-1][2],
+            ]))
+            samples = []
+            for fi in sample_fis:
+                try:
+                    with h5py.File(str(self.paths[fi]), "r") as h:
+                        data = np.asarray(h[varname][:], dtype=float)
+                        # Replace fill values with NaN (h5py doesn't do this automatically)
+                        fv = h[varname].attrs.get("_FillValue", None)
+                        if fv is not None:
+                            data[data == float(fv[0] if hasattr(fv, '__len__') else fv)] = np.nan
+                        samples.append(data.ravel())
+                except (OSError, KeyError):
+                    continue
+            arr = np.concatenate(samples) if samples else np.array([0.0])
 
         finite = arr[np.isfinite(arr)]
         if finite.size == 0:
             return 0.0, 1.0
 
-        # Use 2nd/98th percentile for robust color scaling
         vmin = float(np.percentile(finite, 2))
         vmax = float(np.percentile(finite, 98))
 
-        # Guard against degenerate cases
         if np.isnan(vmin) or np.isnan(vmax):
             return 0.0, 1.0
         if vmin == vmax:

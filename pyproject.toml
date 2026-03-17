@@ -17,6 +17,8 @@ dependencies = [
     "matplotlib>=3.5",
     "PySide6>=6.5",
     "nc-time-axis",
+    "h5py",
+    "cftime",
 ]
 
 [project.optional-dependencies]

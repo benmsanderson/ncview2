@@ -7,6 +7,7 @@ matplotlib.use("QtAgg")
 import sys  # noqa: E402
 import os  # noqa: E402
 import stat  # noqa: E402
+import glob  # noqa: E402
 import argparse  # noqa: E402
 from pathlib import Path  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog  # noqa: E402
@@ -65,8 +66,14 @@ def main():
     window = MainWindow()
     window.show()
 
-    if args.files:
-        window.open_file(args.files[0])
+    # Expand any glob patterns the shell didn't expand (e.g. quoted wildcards)
+    expanded = []
+    for pattern in args.files:
+        matches = sorted(glob.glob(pattern))
+        expanded.extend(matches if matches else [pattern])
+
+    if expanded:
+        window.open_file(expanded if len(expanded) > 1 else expanded[0])
     else:
         path, _ = QFileDialog.getOpenFileName(
             window,
