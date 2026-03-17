@@ -5,8 +5,9 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QToolTip
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QCursor
 
 try:
     import nc_time_axis  # noqa: F401 — registers cftime support with matplotlib
@@ -58,6 +59,7 @@ class TimeseriesCanvas(QWidget):
         self.canvas.draw()
 
         self.canvas.mpl_connect("button_press_event", self._on_click)
+        self.canvas.mpl_connect("motion_notify_event", self._on_hover)
 
     # ── Span zoom ────────────────────────────────────────────────
 
@@ -224,3 +226,13 @@ class TimeseriesCanvas(QWidget):
             idx = int(round(frac * (self._n_points - 1)))
             idx = max(0, min(idx, self._n_points - 1))
         self.time_clicked.emit(idx)
+
+    def _on_hover(self, event):
+        """Show tooltip on timeseries canvas."""
+        if not self._has_data:
+            QToolTip.hideText()
+            return
+        if event.inaxes != self.ax:
+            QToolTip.hideText()
+            return
+        QToolTip.showText(QCursor.pos(), "Click: jump to timestep\nDrag: zoom x-range")

@@ -17,7 +17,10 @@ class DataModel:
 
     def __init__(self, path):
         self.path = Path(path)
-        self.ds = xr.open_dataset(str(path))
+        # Use cftime for dates outside nanosecond range; skip timedelta decoding
+        # to avoid overflow on variables like SNOW_PERSISTENCE.
+        time_coder = xr.coders.CFDatetimeCoder(use_cftime=True)
+        self.ds = xr.open_dataset(str(path), decode_times=time_coder, decode_timedelta=False)
 
     def close(self):
         self.ds.close()
@@ -62,6 +65,29 @@ class DataModel:
     def _is_time_coord(self, dim):
         if dim in self.ds.coords:
             return np.issubdtype(self.ds[dim].dtype, np.datetime64)
+        return False
+
+    def is_land_only(self, varname):
+        """Heuristic: detect if a variable covers land only (not global ocean+land)."""
+        # Check for landmask/landfrac variables in the dataset
+        for name in self.ds.data_vars:
+            if name.lower() in ('landmask', 'landfrac'):
+                return True
+        # Check for high NaN fraction in coordinates (unstructured land grids)
+        if self.is_unstructured(varname):
+            lat, lon = self.get_unstructured_latlon(varname)
+            if lat is not None and np.sum(np.isnan(lat)) / len(lat) > 0.3:
+                return True
+        # Check for high NaN fraction in first data slice
+        scan = self.scan_dims(varname)
+        sel = {d: 0 for d in scan}
+        try:
+            data = self.ds[varname].isel(sel).values.ravel()
+            nan_frac = np.sum(np.isnan(data)) / max(data.size, 1)
+            if nan_frac > 0.3:
+                return True
+        except Exception:
+            pass
         return False
 
     def is_unstructured(self, varname):
@@ -251,11 +277,10 @@ class DataModel:
         return ts, n_cells
 
     def get_global_range(self, varname):
-        """Compute min/max across all data. Samples for large variables."""
+        """Compute robust min/max using percentiles to ignore outliers/fill values."""
         var = self.ds[varname]
         if var.size < 10_000_000:
-            vmin = float(np.nanmin(var.values))
-            vmax = float(np.nanmax(var.values))
+            arr = var.values.ravel()
         else:
             # Sample first, middle, and last slices along the first dim
             scan = self.scan_dims(varname)
@@ -265,10 +290,16 @@ class DataModel:
                 indices = sorted(set([0, n // 2, n - 1]))
                 samples = [var.isel({first_dim: i}).values for i in indices]
                 arr = np.concatenate([s.ravel() for s in samples])
-                vmin, vmax = float(np.nanmin(arr)), float(np.nanmax(arr))
             else:
-                vmin = float(np.nanmin(var.values))
-                vmax = float(np.nanmax(var.values))
+                arr = var.values.ravel()
+
+        finite = arr[np.isfinite(arr)]
+        if finite.size == 0:
+            return 0.0, 1.0
+
+        # Use 2nd/98th percentile for robust color scaling
+        vmin = float(np.percentile(finite, 2))
+        vmax = float(np.percentile(finite, 98))
 
         # Guard against degenerate cases
         if np.isnan(vmin) or np.isnan(vmax):

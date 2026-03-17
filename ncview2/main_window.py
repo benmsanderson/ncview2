@@ -220,6 +220,10 @@ class MainWindow(QMainWindow):
             is_geo = roles.get(y_dim) == "lat" and roles.get(x_dim) == "lon"
             self.spatial.setup(da, cmap=cmap, vmin=self._vmin, vmax=self._vmax, geo=is_geo)
 
+        # Overlay ocean mask for land-only datasets
+        if self.model.is_land_only(varname):
+            self.spatial.set_ocean_mask(True)
+
         # Info label
         shape = ", ".join(f"{d}={s}" for d, s in zip(var_meta.dims, var_meta.shape))
         self.info_label.setText(f"{varname} ({shape})")
@@ -230,6 +234,12 @@ class MainWindow(QMainWindow):
         self._update_spatial()
         if self._clicked_point or self._area_bbox:
             self._update_timeseries_marker()
+        # Update tooltip values for current timestep
+        if self._area_bbox and self.timeseries._y_data is not None and self.scan_dims:
+            idx = self.controls.get_dim_index(self.scan_dims[0])
+            y = self.timeseries._y_data
+            if 0 <= idx < len(y):
+                self.spatial._area_avg_value = float(y[idx])
 
     def _update_spatial(self):
         if not self.current_var or not self.model:
@@ -377,7 +387,10 @@ class MainWindow(QMainWindow):
             return
 
         self._area_bbox = bbox
-        self.spatial.mark_area(lon_min, lon_max, lat_min, lat_max)
+        # Get current timestep's area avg value for tooltip
+        time_idx = self.controls.get_dim_index(self.scan_dims[0]) if self.scan_dims else 0
+        avg_val = float(ts.values[time_idx]) if time_idx < len(ts.values) else None
+        self.spatial.mark_area(lon_min, lon_max, lat_min, lat_max, avg_value=avg_val)
 
         sampled = n_cells >= self.model.MAX_AREA_CELLS
         label = (
