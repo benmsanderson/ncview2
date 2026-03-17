@@ -17,22 +17,38 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 
 ## Install
 
-### 1. Create an environment and install
+### Option A: Conda (recommended)
+
+Conda handles the Qt6, cartopy, and HDF5 dependencies cleanly on all
+platforms. This is the most reliable route, especially on Linux/HPC.
 
 ```bash
-# Conda (recommended — handles Qt and cartopy cleanly)
-conda create -n ncview2 python=3.11 pyside6 cartopy scipy xarray netcdf4 matplotlib cftime cmocean nc-time-axis
+# Create and activate the environment
+conda create -n ncview2 python=3.11 pyside6 cartopy scipy xarray \
+    netcdf4 matplotlib cftime cmocean nc-time-axis h5py
 conda activate ncview2
-pip install /path/to/ncview2
 
-# Or pip only (core install)
+# Install ncview2 itself
+pip install /path/to/ncview2
+```
+
+### Option B: pip only
+
+pip can install everything, but cartopy requires system libraries
+(GEOS, PROJ) that pip cannot provide. On macOS you can get these via
+Homebrew (`brew install geos proj`); on Linux via your package manager.
+Without them, `pip install cartopy` will fail and you'll run without
+coastlines and map projections.
+
+```bash
+# Core install (no coastlines/projections)
 pip install -e .
 
-# With geographic features (coastlines, projections, ocean colormaps)
+# With geographic features (requires GEOS + PROJ on your system)
 pip install -e ".[geo]"
 ```
 
-### 2. Install the wrapper script to use anywhere (optional)
+### Install the wrapper script to use anywhere (optional)
 
 This lets you run `ncview2` from any terminal without activating the
 environment first — just like the original ncview:
