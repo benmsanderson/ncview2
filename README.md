@@ -16,7 +16,7 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 - **Auto-detect geography**: coastlines and land overlay when lat/lon are detected (cartopy)
 - **Cross-platform**: macOS, Linux, Windows via Qt6
 
-## Install
+## Install Local (non-HPC)
 
 ### Option A: Conda (recommended)
 
@@ -48,8 +48,7 @@ pip install -e .
 # With geographic features (requires GEOS + PROJ on your system)
 pip install -e ".[geo]"
 ```
-
-### Option C: NIRD/HPC Installation
+## Install on NIRD
 
 **Step 1: Clone and install**
 ```bash
