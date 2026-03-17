@@ -51,43 +51,25 @@ pip install -e ".[geo]"
 
 ### Option C: NIRD/HPC Installation
 
-**Step 1: Clone the repository**
+**Step 1: Clone and install**
 ```bash
 cd ~
-git clone https://github.com/YOURUSERNAME/ncview2.git
+git clone https://github.com/benmsanderson/ncview2.git
 cd ncview2
-```
 
-**Step 2: Run the installer**
-```bash
-# Temporarily load modules for installation
-module load Anaconda3/2023.07-2
-module load GEOS/3.11.1-GCC-12.2.0
-module load PROJ/9.2.0-GCCcore-12.3.0
-module load X11/20221110-GCCcore-12.2.0
+# Load modules temporarily for installation
+module load Anaconda3/2023.07-2 GEOS/3.11.1-GCC-12.2.0 PROJ/9.2.0-GCCcore-12.3.0 X11/20221110-GCCcore-12.2.0
 
-# Run installer (creates wrapper that auto-loads modules)
+# Run installer (auto-creates wrapper that loads modules)
 ./install_nird.sh
 ```
 
-**Step 3: Add to PATH (add to ~/.bashrc for persistence)**
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-
-# Make permanent:
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-```
-
-**Step 4: For GUI (X11 forwarding required)**
-
-If using **SSH**:
+**Step 2: SSH with X11 forwarding**
 ```bash
 ssh -X username@login.nird.sigma2.no
 ```
 
-If using **VS Code Remote**: The GUI should work automatically via VS Code's forwarding.
-
-**Done.** Run `ncview2 yourfile.nc` from any terminal. The wrapper auto-loads modules.
+**Done.** Run `ncview2 yourfile.nc` - the wrapper auto-loads all modules.
 
 ### Install the wrapper script to use anywhere (optional)
 
