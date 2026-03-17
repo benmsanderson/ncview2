@@ -7,6 +7,7 @@ echo "==> Loading required modules..."
 module load Anaconda3/2023.07-2
 module load GEOS/3.11.1-GCC-12.2.0
 module load PROJ/9.2.0-GCCcore-12.3.0
+module load X11/20221110-GCCcore-12.2.0
 
 echo "==> Installing ncview2..."
 python -m pip install --user -e .
@@ -25,6 +26,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         echo 'module load Anaconda3/2023.07-2' >> ~/.bashrc
         echo 'module load GEOS/3.11.1-GCC-12.2.0' >> ~/.bashrc
         echo 'module load PROJ/9.2.0-GCCcore-12.3.0' >> ~/.bashrc
+        echo 'module load X11/20221110-GCCcore-12.2.0' >> ~/.bashrc
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
         echo "==> Added to ~/.bashrc"
         echo "==> Run 'source ~/.bashrc' or open a new terminal"
@@ -37,6 +39,7 @@ else
     echo "  module load Anaconda3/2023.07-2"
     echo "  module load GEOS/3.11.1-GCC-12.2.0"
     echo "  module load PROJ/9.2.0-GCCcore-12.3.0"
+    echo "  module load X11/20221110-GCCcore-12.2.0"
     echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" 
 fi
 

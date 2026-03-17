@@ -68,6 +68,7 @@ Or manually:
 module load Anaconda3/2023.07-2
 module load GEOS/3.11.1-GCC-12.2.0
 module load PROJ/9.2.0-GCCcore-12.3.0
+module load X11/20221110-GCCcore-12.2.0
 python -m pip install --user -e .
 python -m pip install --user cartopy cmocean
 ```
@@ -77,11 +78,19 @@ python -m pip install --user cartopy cmocean
 echo 'module load Anaconda3/2023.07-2' >> ~/.bashrc
 echo 'module load GEOS/3.11.1-GCC-12.2.0' >> ~/.bashrc
 echo 'module load PROJ/9.2.0-GCCcore-12.3.0' >> ~/.bashrc
+echo 'module load X11/20221110-GCCcore-12.2.0' >> ~/.bashrc
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Done.** Open a new terminal and run `ncview2 yourfile.nc`
+**Step 4: Connect with X11 forwarding**
+
+When SSH'ing to NIRD, use the `-X` flag:
+```bash
+ssh -X username@login.nird.sigma2.no
+```
+
+**Done.** Run `ncview2 yourfile.nc`
 
 ### Install the wrapper script to use anywhere (optional)
 

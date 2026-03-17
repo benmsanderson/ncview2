@@ -5,6 +5,7 @@
 module load Anaconda3/2023.07-2
 module load GEOS/3.11.1-GCC-12.2.0
 module load PROJ/9.2.0-GCCcore-12.3.0
+module load X11/20221110-GCCcore-12.2.0
 
 # Add local bin to PATH
 export PATH="$HOME/.local/bin:$PATH"
