@@ -11,7 +11,7 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 - **Support non-uniform grids**: Delauney traingulation map plot
 - **Multi-file wildcard support**: fast loading of multiple history files using h5py
 - **Animate**: play/pause/step through time (or any scannable dimension)
-- **Modern colormaps**: perceptually uniform (viridis, etc.) + ocean-specific (cmocean)
+- **Multiple colormaps**: large library of Python colormaps
 - **Auto-detect geography**: coastlines and land overlay when lat/lon are detected (cartopy)
 - **Cross-platform**: macOS, Linux, Windows via Qt6
 
