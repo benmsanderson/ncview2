@@ -128,6 +128,4 @@ Corrupt or truncated files are silently skipped during the scan.
 Fill values (`_FillValue`) are converted to NaN for color-range
 calculations so outliers don't blow out the color scale.
 
-## License
 
-MIT
