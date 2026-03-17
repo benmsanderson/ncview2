@@ -138,6 +138,118 @@ class DataModel:
         """
         return self.ds[varname].isel(spatial_sel)
 
+    # ── Area-average timeseries ──────────────────────────────────
+
+    MAX_AREA_CELLS = 500  # subsample above this to keep it fast
+
+    def get_area_average_timeseries(self, varname, bbox, extra_sel=None):
+        """Compute cos(lat)-weighted area-average timeseries over a bounding box.
+
+        Parameters
+        ----------
+        varname : str
+        bbox : tuple (lon_min, lon_max, lat_min, lat_max)
+        extra_sel : dict or None
+            Index selections for non-time scan dims (e.g. level).
+
+        Returns
+        -------
+        ts : xr.DataArray  (1-D, along first scan dim)
+        n_cells : int  (number of cells used, after subsampling)
+        """
+        lon_min, lon_max, lat_min, lat_max = bbox
+
+        if self.is_unstructured(varname):
+            return self._area_avg_unstructured(varname, bbox, extra_sel)
+        else:
+            return self._area_avg_regular(varname, bbox, extra_sel)
+
+    def _area_avg_regular(self, varname, bbox, extra_sel):
+        lon_min, lon_max, lat_min, lat_max = bbox
+        y_dim, x_dim = self.spatial_dims(varname)
+
+        lat_vals = self.dim_coord_values(y_dim)
+        lon_vals = self.dim_coord_values(x_dim)
+        if lat_vals is None or lon_vals is None:
+            raise ValueError("Cannot determine lat/lon coordinates for area average")
+
+        lat_mask = (lat_vals >= lat_min) & (lat_vals <= lat_max)
+        lon_mask = (lon_vals >= lon_min) & (lon_vals <= lon_max)
+
+        yi = np.where(lat_mask)[0]
+        xi = np.where(lon_mask)[0]
+        if yi.size == 0 or xi.size == 0:
+            raise ValueError("No grid cells in selected area")
+
+        n_cells = yi.size * xi.size
+        # Subsample if too many cells
+        if n_cells > self.MAX_AREA_CELLS:
+            rng = np.random.default_rng(0)
+            # Subsample each axis independently to keep it rectangular
+            target_per_axis = max(1, int(np.sqrt(self.MAX_AREA_CELLS)))
+            if yi.size > target_per_axis:
+                yi = rng.choice(yi, target_per_axis, replace=False)
+                yi.sort()
+            if xi.size > target_per_axis:
+                xi = rng.choice(xi, target_per_axis, replace=False)
+                xi.sort()
+            n_cells = yi.size * xi.size
+
+        sel = {y_dim: yi, x_dim: xi}
+        if extra_sel:
+            sel.update(extra_sel)
+
+        sub = self.ds[varname].isel(sel)
+
+        # cos(lat) weights — broadcast over x dim
+        weights = np.cos(np.deg2rad(lat_vals[yi]))
+        # Build an xarray-compatible weight array along spatial dims only
+        weight_da = xr.DataArray(
+            np.broadcast_to(weights[:, np.newaxis], (len(yi), len(xi))),
+            dims=[y_dim, x_dim],
+        )
+        # Weight and average over spatial dims
+        weighted = (sub * weight_da).sum(dim=[y_dim, x_dim])
+        total_w = weight_da.sum(dim=[y_dim, x_dim])
+        ts = weighted / total_w
+
+        return ts, n_cells
+
+    def _area_avg_unstructured(self, varname, bbox, extra_sel):
+        lon_min, lon_max, lat_min, lat_max = bbox
+        (col_dim,) = self.spatial_dims(varname)
+        lat, lon = self.get_unstructured_latlon(varname)
+        if lat is None or lon is None:
+            raise ValueError("Cannot determine lat/lon for unstructured grid")
+
+        # Normalize lons to -180..180 to match spatial canvas
+        lon = (np.asarray(lon, dtype=float) + 180.0) % 360.0 - 180.0
+        lat = np.asarray(lat, dtype=float)
+
+        mask = (lat >= lat_min) & (lat <= lat_max) & (lon >= lon_min) & (lon <= lon_max)
+        col_idx = np.where(mask)[0]
+        if col_idx.size == 0:
+            raise ValueError("No grid cells in selected area")
+
+        # Subsample if too many columns
+        if col_idx.size > self.MAX_AREA_CELLS:
+            rng = np.random.default_rng(0)
+            col_idx = rng.choice(col_idx, self.MAX_AREA_CELLS, replace=False)
+            col_idx.sort()
+
+        n_cells = col_idx.size
+
+        sel = {col_dim: col_idx}
+        if extra_sel:
+            sel.update(extra_sel)
+
+        sub = self.ds[varname].isel(sel)
+
+        weights = np.cos(np.deg2rad(lat[col_idx]))
+        ts = (sub * weights).sum(dim=col_dim) / weights.sum()
+
+        return ts, n_cells
+
     def get_global_range(self, varname):
         """Compute min/max across all data. Samples for large variables."""
         var = self.ds[varname]

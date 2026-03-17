@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.scan_dims: list[str] = []
         self.spatial_dims: tuple = ()
         self._clicked_point: tuple[int, int] | None = None
+        self._area_bbox: tuple[float, float, float, float] | None = None
         self._vmin: float | None = None
         self._vmax: float | None = None
         self._is_unstructured: bool = False
@@ -103,6 +104,7 @@ class MainWindow(QMainWindow):
         self.var_combo.currentTextChanged.connect(self._on_variable_changed)
         self.open_btn.clicked.connect(self._on_open_clicked)
         self.spatial.point_clicked.connect(self._on_point_clicked)
+        self.spatial.area_selected.connect(self._on_area_selected)
         self.timeseries.time_clicked.connect(self._on_timeseries_clicked)
         self.controls.dim_index_changed.connect(self._on_dim_changed)
         self.controls.colormap_changed.connect(self._on_colormap_changed)
@@ -168,6 +170,7 @@ class MainWindow(QMainWindow):
         self.current_var = varname
         self._stop_playing()
         self._clicked_point = None
+        self._area_bbox = None
         self.timeseries.clear_plot()
 
         self._is_unstructured = self.model.is_unstructured(varname)
@@ -225,7 +228,7 @@ class MainWindow(QMainWindow):
 
     def _on_dim_changed(self, _dim_name, _index):
         self._update_spatial()
-        if self._clicked_point:
+        if self._clicked_point or self._area_bbox:
             self._update_timeseries_marker()
 
     def _update_spatial(self):
@@ -264,6 +267,7 @@ class MainWindow(QMainWindow):
     def _on_point_clicked(self, yi, xi):
         if not self.current_var or not self.model:
             return
+        self._area_bbox = None
 
         if self._is_unstructured:
             self._on_point_clicked_unstructured(xi)
@@ -346,6 +350,43 @@ class MainWindow(QMainWindow):
         if self.scan_dims:
             idx = self.controls.get_dim_index(self.scan_dims[0])
             self.timeseries.mark_time(idx)
+
+    # ── Area-average timeseries ──────────────────────────────────
+
+    def _on_area_selected(self, lon_min, lon_max, lat_min, lat_max):
+        if not self.current_var or not self.model:
+            return
+        if not self.scan_dims:
+            self.status.showMessage("Area average requires a scan dimension (e.g. time)", 5000)
+            return
+
+        self._clicked_point = None
+        bbox = (lon_min, lon_max, lat_min, lat_max)
+
+        # Extra sel: fix non-time scan dims to current slider position
+        extra_sel = {}
+        for dim in self.scan_dims[1:]:
+            extra_sel[dim] = self.controls.get_dim_index(dim)
+
+        try:
+            ts, n_cells = self.model.get_area_average_timeseries(
+                self.current_var, bbox, extra_sel=extra_sel or None,
+            )
+        except ValueError as exc:
+            self.status.showMessage(str(exc), 5000)
+            return
+
+        self._area_bbox = bbox
+        self.spatial.mark_area(lon_min, lon_max, lat_min, lat_max)
+
+        sampled = n_cells >= self.model.MAX_AREA_CELLS
+        label = (
+            f"Area avg [{lat_min:.1f}\u2013{lat_max:.1f}, {lon_min:.1f}\u2013{lon_max:.1f}]  "
+            f"({n_cells} cells{', ~sampled' if sampled else ''})"
+        )
+        self.timeseries.plot(ts, point_label=label)
+        self._update_timeseries_marker()
+        self.status.showMessage(label, 5000)
 
     def _on_timeseries_clicked(self, index):
         """Jump the time slider to the clicked position on the timeseries."""

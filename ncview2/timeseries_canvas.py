@@ -180,6 +180,9 @@ class TimeseriesCanvas(QWidget):
             self.time_marker.remove()
         self.time_marker = self.ax.axvline(x_data[index], color="red", linewidth=1, alpha=0.7)
         self.canvas.draw()
+        # Refresh SpanSelector's cached background so blitting doesn't erase the marker
+        if self._span is not None:
+            self._span.update_background(None)
 
     def clear_plot(self):
         self.ax.clear()

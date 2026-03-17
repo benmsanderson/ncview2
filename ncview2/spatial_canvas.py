@@ -3,6 +3,7 @@
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from matplotlib.tri import Triangulation
 from PySide6.QtCore import Signal
 from scipy.spatial import cKDTree
@@ -22,6 +23,8 @@ class SpatialCanvas(FigureCanvasQTAgg):
     # Emitted when the user clicks on the plot: (y_index, x_index)
     #   For unstructured grids x_index is the column index, y_index is -1.
     point_clicked = Signal(int, int)
+    # Emitted when user Shift-drags a rectangle: (lon_min, lon_max, lat_min, lat_max)
+    area_selected = Signal(float, float, float, float)
 
     def __init__(self, parent=None):
         self.fig = Figure(constrained_layout=True)
@@ -31,18 +34,27 @@ class SpatialCanvas(FigureCanvasQTAgg):
         self.cbar = None
         self.marker = None
         self._x_coords = None
+        self._x_coords_orig = None
         self._y_coords = None
         self._use_geo = False
         self._cmap = "viridis"
         self._vmin = None
         self._vmax = None
+        self._lon_sort_idx = None  # reorder index for non-monotonic longitudes
+        self._lon_unsort_idx = None  # inverse mapping for click → original index
         # Unstructured grid state
         self._unstructured = False
         self._tri = None
         self._col_lons = None
         self._col_lats = None
         self._kdtree = None
-        self.mpl_connect("button_press_event", self._on_click)
+        # Rectangle drag state
+        self._drag_origin = None
+        self._drag_rect = None
+        self._area_rect = None  # persistent rectangle showing selection
+        self.mpl_connect("button_press_event", self._on_press)
+        self.mpl_connect("button_release_event", self._on_release)
+        self.mpl_connect("motion_notify_event", self._on_motion)
 
     # ── Regular grid setup ───────────────────────────────────────
 
@@ -54,6 +66,8 @@ class SpatialCanvas(FigureCanvasQTAgg):
         self._col_lons = None
         self._col_lats = None
         self._kdtree = None
+        self._lon_sort_idx = None
+        self._lon_unsort_idx = None
         self._use_geo = geo and HAS_CARTOPY
         if cmap:
             self._cmap = cmap
@@ -69,11 +83,24 @@ class SpatialCanvas(FigureCanvasQTAgg):
         self._x_coords = (
             da.coords[x_dim].values if x_dim in da.coords else np.arange(da.sizes[x_dim])
         )
+        self._x_coords_orig = self._x_coords.copy()
         self._y_coords = (
             da.coords[y_dim].values if y_dim in da.coords else np.arange(da.sizes[y_dim])
         )
 
+        # Ensure longitudes are monotonically increasing for pcolormesh
+        if not np.all(np.diff(self._x_coords) > 0):
+            self._lon_sort_idx = np.argsort(self._x_coords)
+            self._lon_unsort_idx = np.argsort(self._lon_sort_idx)
+            self._x_coords = self._x_coords[self._lon_sort_idx]
+        else:
+            self._lon_sort_idx = None
+            self._lon_unsort_idx = None
+
         data = np.asarray(da.values, dtype=float)
+        if self._lon_sort_idx is not None:
+            data = data[..., self._lon_sort_idx]
+        masked_data = np.ma.masked_invalid(data)
         if vmin is None:
             vmin = float(np.nanmin(data))
         if vmax is None:
@@ -84,7 +111,7 @@ class SpatialCanvas(FigureCanvasQTAgg):
         if self._use_geo:
             kw["transform"] = ccrs.PlateCarree()
 
-        self.mesh = self.ax.pcolormesh(self._x_coords, self._y_coords, data, **kw)
+        self.mesh = self.ax.pcolormesh(self._x_coords, self._y_coords, masked_data, **kw)
         self.cbar = self.fig.colorbar(self.mesh, ax=self.ax, shrink=0.85, pad=0.02)
 
         units = da.attrs.get("units", "")
@@ -175,7 +202,9 @@ class SpatialCanvas(FigureCanvasQTAgg):
             data = np.asarray(da_or_1d, dtype=float)
         else:
             data = np.asarray(da_or_1d.values, dtype=float)
-        self.mesh.set_array(data.ravel())
+            if self._lon_sort_idx is not None:
+                data = data[..., self._lon_sort_idx]
+        self.mesh.set_array(np.ma.masked_invalid(data).ravel())
 
         if self._vmin is not None:
             self.mesh.set_clim(self._vmin, self._vmax)
@@ -209,6 +238,7 @@ class SpatialCanvas(FigureCanvasQTAgg):
         if self.marker:
             self.marker.remove()
             self.marker = None
+        self.clear_area_rect()
 
         if self._unstructured:
             col = xi  # for unstructured, xi is the column index
@@ -217,9 +247,9 @@ class SpatialCanvas(FigureCanvasQTAgg):
             x = float(self._col_lons[col])
             y = float(self._col_lats[col])
         else:
-            if self._x_coords is None or self._y_coords is None:
+            if self._x_coords_orig is None or self._y_coords is None:
                 return
-            x = float(self._x_coords[xi])
+            x = float(self._x_coords_orig[xi])
             y = float(self._y_coords[yi])
 
         kw = {}
@@ -230,14 +260,90 @@ class SpatialCanvas(FigureCanvasQTAgg):
         )
         self.draw()
 
-    def _on_click(self, event):
-        """Convert a mouse click to the nearest grid indices and emit signal."""
+    def mark_area(self, lon_min, lon_max, lat_min, lat_max):
+        """Draw a persistent rectangle showing the area selection."""
+        self.clear_area_rect()
+        if self.marker:
+            self.marker.remove()
+            self.marker = None
+        kw = {}
+        if self._use_geo:
+            kw["transform"] = ccrs.PlateCarree()
+        self._area_rect = Rectangle(
+            (lon_min, lat_min), lon_max - lon_min, lat_max - lat_min,
+            linewidth=2, edgecolor="red", facecolor="red", alpha=0.15, zorder=9, **kw,
+        )
+        self.ax.add_patch(self._area_rect)
+        self.draw()
+
+    def clear_area_rect(self):
+        """Remove the persistent area rectangle."""
+        if self._area_rect is not None:
+            self._area_rect.remove()
+            self._area_rect = None
+
+    # ── Mouse events: click vs drag ─────────────────────────────
+
+    def _on_press(self, event):
+        """Record press location; drag vs click is decided on release."""
         if event.inaxes != self.ax or event.button != 1:
             return
-        xd, yd = event.xdata, event.ydata
-        if xd is None or yd is None:
+        if event.xdata is None or event.ydata is None:
+            return
+        self._drag_origin = (event.xdata, event.ydata)
+
+    def _on_motion(self, event):
+        """Draw rubber-band rectangle while dragging."""
+        if self._drag_origin is None or event.xdata is None:
+            return
+        if event.inaxes != self.ax:
             return
 
+        x0, y0 = self._drag_origin
+        x1, y1 = event.xdata, event.ydata
+        # Update rubber-band rectangle
+        if self._drag_rect is not None:
+            self._drag_rect.remove()
+        kw = {}
+        if self._use_geo:
+            kw["transform"] = ccrs.PlateCarree()
+        self._drag_rect = Rectangle(
+            (min(x0, x1), min(y0, y1)), abs(x1 - x0), abs(y1 - y0),
+            linewidth=1.5, edgecolor="red", facecolor="red", alpha=0.1,
+            linestyle="--", zorder=10, **kw,
+        )
+        self.ax.add_patch(self._drag_rect)
+        self.draw_idle()
+
+    def _on_release(self, event):
+        """Finish rectangle drag (area avg) or handle plain click (point)."""
+        if event.inaxes != self.ax or event.button != 1:
+            self._drag_origin = None
+            return
+        if event.xdata is None or event.ydata is None:
+            self._drag_origin = None
+            return
+
+        # Clean up rubber-band
+        if self._drag_rect is not None:
+            self._drag_rect.remove()
+            self._drag_rect = None
+            self.draw_idle()
+
+        if self._drag_origin is not None:
+            x0, y0 = self._drag_origin
+            x1, y1 = event.xdata, event.ydata
+            self._drag_origin = None
+            # Drag: emit area if rectangle is non-trivial
+            if abs(x1 - x0) > 0.5 or abs(y1 - y0) > 0.5:
+                lon_min, lon_max = sorted([x0, x1])
+                lat_min, lat_max = sorted([y0, y1])
+                self.area_selected.emit(lon_min, lon_max, lat_min, lat_max)
+                return
+
+        # Click (no drag or tiny drag) → point selection
+        self._drag_origin = None
+        xd, yd = event.xdata, event.ydata
         if self._unstructured:
             if self._kdtree is None:
                 return
@@ -248,4 +354,7 @@ class SpatialCanvas(FigureCanvasQTAgg):
                 return
             xi = int(np.argmin(np.abs(self._x_coords - xd)))
             yi = int(np.argmin(np.abs(self._y_coords - yd)))
+            # Map sorted lon index back to original dataset index
+            if self._lon_unsort_idx is not None:
+                xi = int(self._lon_unsort_idx[xi])
             self.point_clicked.emit(yi, xi)
