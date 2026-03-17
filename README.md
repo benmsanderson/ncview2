@@ -1,7 +1,7 @@
 # ncview2
 
 A modern NetCDF visual browser — a Python reimplementation of the core
-[ncview](http://meteora.ucsd.edu/~pierce/ncview_home_page.html) workflow.
+[ncview](https://cirrus.ucsd.edu/ncview/) workflow.
 
 ## Features
 
