@@ -56,11 +56,6 @@ pip install -e ".[geo]"
 cd ~
 git clone https://github.com/benmsanderson/ncview2.git
 cd ncview2
-
-# Load modules temporarily for installation
-module load Anaconda3/2023.07-2 GEOS/3.11.1-GCC-12.2.0 PROJ/9.2.0-GCCcore-12.3.0 X11/20221110-GCCcore-12.2.0
-
-# Run installer (auto-creates wrapper that loads modules)
 ./install_nird.sh
 ```
 
