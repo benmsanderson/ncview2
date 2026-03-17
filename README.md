@@ -30,7 +30,7 @@ conda create -n ncview2 python=3.11 pyside6 cartopy scipy xarray \
 conda activate ncview2
 
 # Install ncview2 itself
-pip install /path/to/ncview2
+pip install .
 ```
 
 ### Option B: pip only
