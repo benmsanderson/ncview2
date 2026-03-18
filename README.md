@@ -20,45 +20,31 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 
 ### Option A: Conda (recommended)
 
-Conda handles the Qt6, cartopy, and HDF5 dependencies cleanly on all
-platforms. This is the most reliable route, especially on Linux/HPC.
-
 ```bash
-# Create and activate the environment
-conda create -n ncview2 python=3.11 pyside6 cartopy scipy xarray \
-    netcdf4 matplotlib cftime cmocean nc-time-axis h5py
-conda activate ncview2
-
-# Install ncview2 itself
-pip install /path/to/ncview2
+git clone https://github.com/benmsanderson/ncview2.git
+cd ncview2
+./install_conda_local.sh
 ```
 
-### Option B: pip only
+Then activate and run: `conda activate ncview2 && ncview2 yourfile.nc`
 
-pip can install everything, but cartopy requires system libraries
-(GEOS, PROJ) that pip cannot provide. On macOS you can get these via
-Homebrew (`brew install geos proj`); on Linux via your package manager.
-Without them, `pip install cartopy` will fail and you'll run without
-coastlines and map projections.
+### Option B: pip + venv
 
-```bash
-# Core install (no coastlines/projections)
-pip install -e .
-
-# With geographic features (requires GEOS + PROJ on your system)
-pip install -e ".[geo]"
-```
-
-### Optional: local install, run from any folder without pre-loading environment
-
-For conda or local pip installs, you can create a wrapper that works without activating the environment:
+Requires Python 3.10+ and system libraries (GEOS, PROJ).  
+macOS: `brew install geos proj` | Ubuntu: `sudo apt install libgeos-dev libproj-dev`
 
 ```bash
-# Run this once, while the environment is active:
-ncview2 --install
+git clone https://github.com/benmsanderson/ncview2.git
+cd ncview2
+./install_pip_local.sh
 ```
 
-This writes a shell wrapper to `~/.local/bin/ncview2` that calls the environment's Python directly. Make sure `~/.local/bin` is in your `PATH`.
+Then activate and run: `source venv/bin/activate && ncview2 yourfile.nc`
+
+### Optional: Wrapper for any folder
+
+Both scripts above run `ncview2 --install` automatically, which creates `~/.local/bin/ncview2`.  
+Add `~/.local/bin` to your PATH to run ncview2 from anywhere without activating the environment.
 
 ## Install on NIRD
 
