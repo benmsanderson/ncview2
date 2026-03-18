@@ -4,10 +4,10 @@
 set -e  # Exit on error
 
 echo "==> Loading required modules..."
-module load Anaconda3/2023.07-2
-module load GEOS/3.11.1-GCC-12.2.0
-module load PROJ/9.2.0-GCCcore-12.3.0
-module load X11/20221110-GCCcore-12.2.0
+module load Miniforge3/24.1.2-0
+module load GEOS/3.12.1-GCC-13.2.0
+module load PROJ/9.3.1-GCCcore-13.2.0
+module load X11/20240607-GCCcore-13.3.0
 
 echo "==> Installing ncview2..."
 python -m pip install --user -e .
@@ -21,10 +21,10 @@ cat > ~/.local/bin/ncview2 << 'WRAPPER_EOF'
 # ncview2 wrapper that loads required modules
 
 # Load required modules
-module load Anaconda3/2023.07-2 2>/dev/null
-module load GEOS/3.11.1-GCC-12.2.0 2>/dev/null
-module load PROJ/9.2.0-GCCcore-12.3.0 2>/dev/null
-module load X11/20221110-GCCcore-12.2.0 2>/dev/null
+module load Miniforge3/24.1.2-0>/dev/null
+module load GEOS/3.12.1-GCC-13.2.0>/dev/null
+module load PROJ/9.3.1-GCCcore-13.2.0 >/dev/null
+module load X11/20240607-GCCcore-13.3.0  2>/dev/null
 
 # Set DISPLAY if not set (for VS Code Remote)
 if [ -z "$DISPLAY" ]; then
@@ -35,7 +35,7 @@ fi
 export QT_PLUGIN_PATH="$HOME/.local/lib/python3.11/site-packages/PySide6/Qt/plugins"
 
 # Run ncview2
-exec /nird/services/software/nird/sw/software/Anaconda3/2023.07-2/bin/python -m ncview2 "$@"
+exec python -m ncview2 "$@"
 WRAPPER_EOF
 chmod +x ~/.local/bin/ncview2
 
