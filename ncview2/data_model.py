@@ -92,7 +92,7 @@ class DataModel:
                 try:
                     with xr.open_dataset(str(p), decode_times=False) as tmp:
                         if self._time_dim and self._time_dim in tmp:
-                            n = tmp.dims[self._time_dim]
+                            n = tmp.sizes[self._time_dim]
                             time_raw.append(tmp[self._time_dim].values)
                         else:
                             n = 1
