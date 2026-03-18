@@ -10,6 +10,8 @@ detect_stack() {
         echo "miniforge"
     elif module avail Anaconda3 2>&1 | grep -q Anaconda3; then
         echo "anaconda"
+     elif module avail NRIS/Login 2>&1 | grep -q NRIS/Login; then
+        echo "nris"
     else
         echo ""
     fi
@@ -29,6 +31,14 @@ elif [[ "$STACK" == "anaconda" ]]; then
     MOD_GEOS="GEOS/3.11.1-GCC-12.2.0"
     MOD_PROJ="PROJ/9.2.0-GCCcore-12.3.0"
     MOD_X11="X11/20221110-GCCcore-12.2.0"
+elif [[ "$STACK" == "nris" ]]; then
+    echo "==> Detected NRIS (Olivia) stack"
+    MOD_PYTHON="Anaconda/1.0"
+    MOD_GEOS="GEOS/3.13.1-GCC-14.2.0"
+    MOD_PROJ="PROJ/9.6.2-GCCcore-14.2.0"
+    MOD_X11="X11/20250521-GCCcore-14.2.0"
+    echo "==> Load top-level NRIS/Login module to get access to other modules"
+    module load NRIS/Login
 else
     echo "ERROR: Neither Miniforge3 nor Anaconda3 modules found."
     echo "Run 'module avail' to see available modules."
