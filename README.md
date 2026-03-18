@@ -48,6 +48,18 @@ pip install -e .
 # With geographic features (requires GEOS + PROJ on your system)
 pip install -e ".[geo]"
 ```
+
+### Optional: Create a wrapper script
+
+For conda or local pip installs, you can create a wrapper that works without activating the environment:
+
+```bash
+# Run this once, while the environment is active:
+ncview2 --install
+```
+
+This writes a shell wrapper to `~/.local/bin/ncview2` that calls the environment's Python directly. Make sure `~/.local/bin` is in your `PATH`.
+
 ## Install on NIRD
 
 **Step 1: Clone and install**
@@ -64,22 +76,6 @@ ssh -X username@login.nird.sigma2.no
 ```
 
 **Done.** Run `ncview2 yourfile.nc` - the wrapper auto-loads all modules.
-
-### Install the wrapper script to use anywhere (optional)
-
-This lets you run `ncview2` from any terminal without activating the
-environment first — just like the original ncview:
-
-```bash
-# Run this once, while the environment is active:
-ncview2 --install
-```
-
-This writes a small shell wrapper to `~/.local/bin/ncview2` that calls
-the environment's Python directly. Make sure `~/.local/bin` is in your
-`PATH` (the command will tell you if it isn't).
-
-After this, `ncview2 file.nc` works from anywhere — no activation needed.
 
 ## Usage
 
