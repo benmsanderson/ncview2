@@ -658,24 +658,35 @@ class DataModel:
                     arr = var.values.ravel()
         else:
             # Multi-file: sample from first, middle, and last files
-            import h5py
             sample_fis = sorted(set([
                 self._file_offsets[0][2],
                 self._file_offsets[len(self._file_offsets) // 2][2],
                 self._file_offsets[-1][2],
             ]))
             samples = []
-            for fi in sample_fis:
-                try:
-                    with h5py.File(str(self.paths[fi]), "r") as h:
-                        data = np.asarray(h[varname][:], dtype=float)
-                        # Replace fill values with NaN (h5py doesn't do this automatically)
-                        fv = h[varname].attrs.get("_FillValue", None)
-                        if fv is not None:
-                            data[data == float(fv[0] if hasattr(fv, '__len__') else fv)] = np.nan
-                        samples.append(data.ravel())
-                except (OSError, KeyError):
-                    continue
+            if self._is_hdf5:
+                import h5py
+                for fi in sample_fis:
+                    try:
+                        with h5py.File(str(self.paths[fi]), "r") as h:
+                            data = np.asarray(h[varname][:], dtype=float)
+                            fv = h[varname].attrs.get("_FillValue", None)
+                            if fv is not None:
+                                data[data == float(fv[0] if hasattr(fv, '__len__') else fv)] = np.nan
+                            samples.append(data.ravel())
+                    except (OSError, KeyError):
+                        continue
+            else:
+                for fi in sample_fis:
+                    try:
+                        with xr.open_dataset(
+                            str(self.paths[fi]),
+                            decode_times=False, decode_timedelta=False,
+                        ) as ds:
+                            data = np.asarray(ds[varname].values, dtype=float)
+                            samples.append(data.ravel())
+                    except Exception:
+                        continue
             arr = np.concatenate(samples) if samples else np.array([0.0])
 
         finite = arr[np.isfinite(arr)]
