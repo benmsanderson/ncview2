@@ -37,9 +37,18 @@ class DataModel:
             )
             self._build_multifile_index()
 
+    def _detect_hdf5(self):
+        """Check if the first file is HDF5 (NetCDF-4) or classic NetCDF-3."""
+        try:
+            import h5py
+            with h5py.File(str(self.paths[0]), "r"):
+                return True
+        except Exception:
+            return False
+
     def _build_multifile_index(self):
-        """Build time-to-file mapping using h5py for speed."""
-        import h5py
+        """Build time-to-file mapping. Uses h5py for HDF5 files, xarray otherwise."""
+        self._is_hdf5 = self._detect_hdf5()
 
         # Detect time dimension name
         self._time_dim = None
@@ -55,24 +64,44 @@ class DataModel:
         valid_paths = []  # paths that opened successfully
         total = 0
 
-        for i, p in enumerate(self.paths):
-            try:
-                with h5py.File(str(p), "r") as h:
-                    if self._time_dim and self._time_dim in h:
-                        n = h[self._time_dim].shape[0]
-                        time_raw.append(h[self._time_dim][:])
-                    else:
-                        n = 1
-                        time_raw.append(np.array([total], dtype=float))
-            except OSError:
-                continue  # skip truncated/corrupt files
-            offsets.append((total, total + n, i))
-            valid_paths.append(p)
-            total += n
+        if self._is_hdf5:
+            import h5py
+            for i, p in enumerate(self.paths):
+                try:
+                    with h5py.File(str(p), "r") as h:
+                        if self._time_dim and self._time_dim in h:
+                            n = h[self._time_dim].shape[0]
+                            time_raw.append(h[self._time_dim][:])
+                        else:
+                            n = 1
+                            time_raw.append(np.array([total], dtype=float))
+                except OSError:
+                    continue
+                offsets.append((total, total + n, i))
+                valid_paths.append(p)
+                total += n
+        else:
+            for i, p in enumerate(self.paths):
+                try:
+                    with xr.open_dataset(str(p), decode_times=False) as tmp:
+                        if self._time_dim and self._time_dim in tmp:
+                            n = tmp.dims[self._time_dim]
+                            time_raw.append(tmp[self._time_dim].values)
+                        else:
+                            n = 1
+                            time_raw.append(np.array([total], dtype=float))
+                except Exception:
+                    continue
+                offsets.append((total, total + n, i))
+                valid_paths.append(p)
+                total += n
 
         self._file_offsets = offsets
         self._total_time = total
         self.paths = valid_paths
+
+        if not time_raw:
+            raise ValueError("No files could be opened successfully.")
 
         # Decode concatenated time coordinate
         raw = np.concatenate(time_raw)
@@ -97,10 +126,17 @@ class DataModel:
         raise IndexError(f"Time index {global_idx} out of range (0–{self._total_time - 1})")
 
     def _h5_read(self, file_idx, varname, sel_tuple):
-        """Read a slice from a file using h5py. sel_tuple is a tuple of index objects."""
-        import h5py
-        with h5py.File(str(self.paths[file_idx]), "r") as h:
-            return np.asarray(h[varname][sel_tuple], dtype=float)
+        """Read a slice from a file. Uses h5py for HDF5 files, xarray otherwise."""
+        if self._is_hdf5:
+            import h5py
+            with h5py.File(str(self.paths[file_idx]), "r") as h:
+                return np.asarray(h[varname][sel_tuple], dtype=float)
+        else:
+            with xr.open_dataset(
+                str(self.paths[file_idx]),
+                decode_times=False, decode_timedelta=False,
+            ) as ds:
+                return np.asarray(ds[varname].values[sel_tuple], dtype=float)
 
     def close(self):
         self.ds.close()
