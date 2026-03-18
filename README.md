@@ -76,6 +76,10 @@ python -m ncview2 file.nc
 # Open multiple sequential files (concatenated along time)
 ncview2 run.cam.h0.*.nc
 
+# Other glob patterns work too
+ncview2 run.cam.h0.0010-??.nc        # single-character wildcard
+ncview2 run.cam.h0.001[0-5]-*.nc     # character ranges
+
 # No arguments → file dialog
 ncview2
 ```

@@ -13,6 +13,18 @@ TIME_NAMES = frozenset({"time", "t", "times"})
 # Dimension names that typically indicate an unstructured spatial column
 _UNSTRUCTURED_DIM_NAMES = frozenset({"ncol", "ncells", "nfaces", "cell", "ngrid"})
 
+_NETCDF3_FILE_LIMIT = 120  # ~10 years of monthly data
+
+
+def is_hdf5(path):
+    """Return True if *path* is an HDF5 (NetCDF-4) file, False for NetCDF-3/classic."""
+    try:
+        import h5py
+        with h5py.File(str(path), "r"):
+            return True
+    except Exception:
+        return False
+
 
 class DataModel:
     """Manages an open NetCDF dataset and provides slicing operations."""
@@ -40,12 +52,7 @@ class DataModel:
 
     def _detect_hdf5(self):
         """Check if the first file is HDF5 (NetCDF-4) or classic NetCDF-3."""
-        try:
-            import h5py
-            with h5py.File(str(self.paths[0]), "r"):
-                return True
-        except Exception:
-            return False
+        return is_hdf5(self.paths[0])
 
     def _build_multifile_index(self):
         """Build time-to-file mapping. Uses h5py for HDF5 files, xarray otherwise."""
