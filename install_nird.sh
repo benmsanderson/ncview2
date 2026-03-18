@@ -37,6 +37,8 @@ elif [[ "$STACK" == "nris" ]]; then
     MOD_GEOS="GEOS/3.13.1-GCC-14.2.0"
     MOD_PROJ="PROJ/9.6.2-GCCcore-14.2.0"
     MOD_X11="X11/20250521-GCCcore-14.2.0"
+    echo "==> Load top-level NRIS/Login module to get access to other modules"
+    module load NRIS/Login
 else
     echo "ERROR: Neither Miniforge3 nor Anaconda3 modules found."
     echo "Run 'module avail' to see available modules."
