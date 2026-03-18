@@ -49,7 +49,7 @@ pip install -e .
 pip install -e ".[geo]"
 ```
 
-### Optional: Run from anywhere
+### Optional: local install, run from any folder without pre-loading environment
 
 For conda or local pip installs, you can create a wrapper that works without activating the environment:
 
