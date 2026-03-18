@@ -1,7 +1,7 @@
 # ncview2
 
-A modern NetCDF visual browser — a Python reimplementation of the core
-[ncview](https://cirrus.ucsd.edu/ncview/) workflow.
+A modern NetCDF visual browser — a Python reimplementation of 
+[ncview](https://cirrus.ucsd.edu/ncview/).
 
 ## Features
 
