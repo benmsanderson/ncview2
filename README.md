@@ -43,7 +43,7 @@ Then activate and run: `source venv/bin/activate && ncview2 yourfile.nc`
 
 ### Optional: Wrapper for any folder
 
-Both scripts above run `ncview2 --install` automatically, which creates `~/.local/bin/ncview2`.  
+Both scripts above ask if you want `ncview2 --install`, which creates `~/.local/bin/ncview2`.  
 Add `~/.local/bin` to your PATH to run ncview2 from anywhere without activating the environment.
 
 ## Install on NIRD
