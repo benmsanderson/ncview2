@@ -1,6 +1,7 @@
 """Data model — xarray-based NetCDF loading and slicing."""
 
 import os
+import warnings
 import numpy as np
 import xarray as xr
 from pathlib import Path
@@ -49,6 +50,12 @@ class DataModel:
     def _build_multifile_index(self):
         """Build time-to-file mapping. Uses h5py for HDF5 files, xarray otherwise."""
         self._is_hdf5 = self._detect_hdf5()
+        if not self._is_hdf5:
+            warnings.warn(
+                "Files are not HDF5 (NetCDF-4); falling back to xarray for "
+                "multi-file reads. This will be much slower for large datasets.",
+                stacklevel=2,
+            )
 
         # Detect time dimension name
         self._time_dim = None
