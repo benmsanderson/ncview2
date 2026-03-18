@@ -10,7 +10,7 @@ A modern NetCDF visual browser — a Python reimplementation of the core
 - **Area Average**: click and drag to calculate an area average for the line plot
 - **Vertical profiles**: 3D variables with a vertical cooordinate will display an additional vertical profile
 - **Support non-uniform grids**: Delauney traingulation map plot
-- **Multi-file wildcard support**: fast loading of multiple history files using h5py
+- **Multi-file wildcard support**: fast loading of multiple history files using h5py (100 files ~5 seconds, 1000 files ~20 seconds)
 - **Animate**: play/pause/step through time (or any scannable dimension)
 - **Multiple colormaps**: large library of Python colormaps
 - **Auto-detect geography**: coastlines and land overlay when lat/lon are detected (cartopy)

@@ -31,13 +31,13 @@ class AnimationControls(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         buttons = [
-            ("⏮", self.go_to_start),
-            ("⏪", self.step_backward),
+            ("|◀", self.go_to_start),
+            ("◀◀", self.step_backward),
             ("◀", self.play_backward),
-            ("⏸", self.pause),
+            ("||", self.pause),
             ("▶", self.play_forward),
-            ("⏩", self.step_forward),
-            ("⏭", self.go_to_end),
+            ("▶▶", self.step_forward),
+            ("▶|", self.go_to_end),
         ]
         for label, signal in buttons:
             btn = QPushButton(label)
