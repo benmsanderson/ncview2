@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from ncview2.data_model import DataModel
+from ncview2.data_model import DataModel, is_hdf5, _NETCDF3_FILE_LIMIT
 from ncview2.spatial_canvas import SpatialCanvas
 from ncview2.timeseries_canvas import TimeseriesCanvas
 from ncview2.profile_canvas import ProfileCanvas
@@ -146,6 +146,31 @@ class MainWindow(QMainWindow):
 
     def open_file(self, paths):
         """Open one or more NetCDF files. *paths* can be a string or a list."""
+        # Warn about large NetCDF-3 multi-file opens
+        if isinstance(paths, (list, tuple)) and len(paths) > _NETCDF3_FILE_LIMIT:
+            if not is_hdf5(paths[0]):
+                n = len(paths)
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Warning)
+                msg.setWindowTitle("Large dataset")
+                msg.setText(
+                    f"You are opening {n} NetCDF-3 files.\n\n"
+                    f"These files require the xarray fallback which is "
+                    f"much slower than HDF5/NetCDF-4 for multi-file access.\n\n"
+                    f"This may freeze the application for a long time."
+                )
+                btn_all = msg.addButton(f"Open all {n} files", QMessageBox.AcceptRole)
+                btn_trunc = msg.addButton(
+                    f"Open first {_NETCDF3_FILE_LIMIT} files", QMessageBox.AcceptRole
+                )
+                msg.addButton("Cancel", QMessageBox.RejectRole)
+                msg.exec()
+                clicked = msg.clickedButton()
+                if clicked == btn_trunc:
+                    paths = paths[:_NETCDF3_FILE_LIMIT]
+                elif clicked != btn_all:
+                    return
+
         try:
             new_model = DataModel(paths)
         except Exception as exc:
@@ -209,13 +234,17 @@ class MainWindow(QMainWindow):
         # Compute global color range
         self._vmin, self._vmax = self.model.get_global_range(varname)
 
-        # Auto-select colormap
-        cmap = default_colormap(self._vmin, self._vmax)
-        idx = self.controls.cmap_combo.findText(cmap)
-        if idx >= 0:
-            self.controls.cmap_combo.blockSignals(True)
-            self.controls.cmap_combo.setCurrentIndex(idx)
-            self.controls.cmap_combo.blockSignals(False)
+        # Auto-select colormap only on first variable; preserve user choice afterward
+        current_cmap = self.controls.cmap_combo.currentText()
+        if not current_cmap:
+            cmap = default_colormap(self._vmin, self._vmax)
+            idx = self.controls.cmap_combo.findText(cmap)
+            if idx >= 0:
+                self.controls.cmap_combo.blockSignals(True)
+                self.controls.cmap_combo.setCurrentIndex(idx)
+                self.controls.cmap_combo.blockSignals(False)
+        else:
+            cmap = current_cmap
 
         # Draw initial frame
         sel = {d: 0 for d in self.scan_dims}

@@ -132,7 +132,14 @@ class TimeseriesCanvas(QWidget):
         self._n_points = len(x)
         y = da.values.astype(float)
         self._y_data = y
-        (self.line,) = self.ax.plot(x, y, "-", linewidth=1, color="#1f77b4")
+        if self._n_points == 1:
+            # Single timestep: draw a horizontal line so the value is visible
+            (self.line,) = self.ax.plot(x, y, "o", markersize=6, color="#1f77b4")
+            finite = y[np.isfinite(y)]
+            if finite.size > 0:
+                self.ax.axhline(finite[0], linestyle="--", linewidth=1, color="#1f77b4", alpha=0.5)
+        else:
+            (self.line,) = self.ax.plot(x, y, "-", linewidth=1, color="#1f77b4")
 
         # Nice datetime formatting
         x_arr = np.asarray(x)

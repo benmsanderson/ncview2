@@ -47,7 +47,7 @@ Then activate and run: `source venv/bin/activate && ncview2 yourfile.nc`
 Both scripts above ask if you want `ncview2 --install`, which creates `~/.local/bin/ncview2`.  
 Add `~/.local/bin` to your PATH to run ncview2 from anywhere without activating the environment.
 
-## Install on NIRD
+## Install on NIRD or Betzy
 
 **Step 1: Clone and install**
 ```bash
@@ -75,6 +75,10 @@ python -m ncview2 file.nc
 
 # Open multiple sequential files (concatenated along time)
 ncview2 run.cam.h0.*.nc
+
+# Other glob patterns work too
+ncview2 run.cam.h0.0010-??.nc        # single-character wildcard
+ncview2 run.cam.h0.001[0-5]-*.nc     # character ranges
 
 # No arguments → file dialog
 ncview2

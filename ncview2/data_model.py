@@ -1,6 +1,7 @@
 """Data model — xarray-based NetCDF loading and slicing."""
 
 import os
+import warnings
 import numpy as np
 import xarray as xr
 from pathlib import Path
@@ -11,6 +12,18 @@ TIME_NAMES = frozenset({"time", "t", "times"})
 
 # Dimension names that typically indicate an unstructured spatial column
 _UNSTRUCTURED_DIM_NAMES = frozenset({"ncol", "ncells", "nfaces", "cell", "ngrid"})
+
+_NETCDF3_FILE_LIMIT = 120  # ~10 years of monthly data
+
+
+def is_hdf5(path):
+    """Return True if *path* is an HDF5 (NetCDF-4) file, False for NetCDF-3/classic."""
+    try:
+        import h5py
+        with h5py.File(str(path), "r"):
+            return True
+    except Exception:
+        return False
 
 
 class DataModel:
@@ -37,9 +50,19 @@ class DataModel:
             )
             self._build_multifile_index()
 
+    def _detect_hdf5(self):
+        """Check if the first file is HDF5 (NetCDF-4) or classic NetCDF-3."""
+        return is_hdf5(self.paths[0])
+
     def _build_multifile_index(self):
-        """Build time-to-file mapping using h5py for speed."""
-        import h5py
+        """Build time-to-file mapping. Uses h5py for HDF5 files, xarray otherwise."""
+        self._is_hdf5 = self._detect_hdf5()
+        if not self._is_hdf5:
+            warnings.warn(
+                "Files are not HDF5 (NetCDF-4); falling back to xarray for "
+                "multi-file reads. This will be much slower for large datasets.",
+                stacklevel=2,
+            )
 
         # Detect time dimension name
         self._time_dim = None
@@ -55,24 +78,44 @@ class DataModel:
         valid_paths = []  # paths that opened successfully
         total = 0
 
-        for i, p in enumerate(self.paths):
-            try:
-                with h5py.File(str(p), "r") as h:
-                    if self._time_dim and self._time_dim in h:
-                        n = h[self._time_dim].shape[0]
-                        time_raw.append(h[self._time_dim][:])
-                    else:
-                        n = 1
-                        time_raw.append(np.array([total], dtype=float))
-            except OSError:
-                continue  # skip truncated/corrupt files
-            offsets.append((total, total + n, i))
-            valid_paths.append(p)
-            total += n
+        if self._is_hdf5:
+            import h5py
+            for i, p in enumerate(self.paths):
+                try:
+                    with h5py.File(str(p), "r") as h:
+                        if self._time_dim and self._time_dim in h:
+                            n = h[self._time_dim].shape[0]
+                            time_raw.append(h[self._time_dim][:])
+                        else:
+                            n = 1
+                            time_raw.append(np.array([total], dtype=float))
+                except OSError:
+                    continue
+                offsets.append((total, total + n, i))
+                valid_paths.append(p)
+                total += n
+        else:
+            for i, p in enumerate(self.paths):
+                try:
+                    with xr.open_dataset(str(p), decode_times=False) as tmp:
+                        if self._time_dim and self._time_dim in tmp:
+                            n = tmp.sizes[self._time_dim]
+                            time_raw.append(tmp[self._time_dim].values)
+                        else:
+                            n = 1
+                            time_raw.append(np.array([total], dtype=float))
+                except Exception:
+                    continue
+                offsets.append((total, total + n, i))
+                valid_paths.append(p)
+                total += n
 
         self._file_offsets = offsets
         self._total_time = total
         self.paths = valid_paths
+
+        if not time_raw:
+            raise ValueError("No files could be opened successfully.")
 
         # Decode concatenated time coordinate
         raw = np.concatenate(time_raw)
@@ -97,10 +140,17 @@ class DataModel:
         raise IndexError(f"Time index {global_idx} out of range (0–{self._total_time - 1})")
 
     def _h5_read(self, file_idx, varname, sel_tuple):
-        """Read a slice from a file using h5py. sel_tuple is a tuple of index objects."""
-        import h5py
-        with h5py.File(str(self.paths[file_idx]), "r") as h:
-            return np.asarray(h[varname][sel_tuple], dtype=float)
+        """Read a slice from a file. Uses h5py for HDF5 files, xarray otherwise."""
+        if self._is_hdf5:
+            import h5py
+            with h5py.File(str(self.paths[file_idx]), "r") as h:
+                return np.asarray(h[varname][sel_tuple], dtype=float)
+        else:
+            with xr.open_dataset(
+                str(self.paths[file_idx]),
+                decode_times=False, decode_timedelta=False,
+            ) as ds:
+                return np.asarray(ds[varname].values[sel_tuple], dtype=float)
 
     def close(self):
         self.ds.close()
@@ -615,24 +665,35 @@ class DataModel:
                     arr = var.values.ravel()
         else:
             # Multi-file: sample from first, middle, and last files
-            import h5py
             sample_fis = sorted(set([
                 self._file_offsets[0][2],
                 self._file_offsets[len(self._file_offsets) // 2][2],
                 self._file_offsets[-1][2],
             ]))
             samples = []
-            for fi in sample_fis:
-                try:
-                    with h5py.File(str(self.paths[fi]), "r") as h:
-                        data = np.asarray(h[varname][:], dtype=float)
-                        # Replace fill values with NaN (h5py doesn't do this automatically)
-                        fv = h[varname].attrs.get("_FillValue", None)
-                        if fv is not None:
-                            data[data == float(fv[0] if hasattr(fv, '__len__') else fv)] = np.nan
-                        samples.append(data.ravel())
-                except (OSError, KeyError):
-                    continue
+            if self._is_hdf5:
+                import h5py
+                for fi in sample_fis:
+                    try:
+                        with h5py.File(str(self.paths[fi]), "r") as h:
+                            data = np.asarray(h[varname][:], dtype=float)
+                            fv = h[varname].attrs.get("_FillValue", None)
+                            if fv is not None:
+                                data[data == float(fv[0] if hasattr(fv, '__len__') else fv)] = np.nan
+                            samples.append(data.ravel())
+                    except (OSError, KeyError):
+                        continue
+            else:
+                for fi in sample_fis:
+                    try:
+                        with xr.open_dataset(
+                            str(self.paths[fi]),
+                            decode_times=False, decode_timedelta=False,
+                        ) as ds:
+                            data = np.asarray(ds[varname].values, dtype=float)
+                            samples.append(data.ravel())
+                    except Exception:
+                        continue
             arr = np.concatenate(samples) if samples else np.array([0.0])
 
         finite = arr[np.isfinite(arr)]
