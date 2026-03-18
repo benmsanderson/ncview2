@@ -1,13 +1,45 @@
 #!/bin/bash
 # NIRD installation script for ncview2
+# Auto-detects whether Anaconda3 or Miniforge3 modules are available.
 
 set -e  # Exit on error
 
+# ── Detect available software stack ──────────────────────────────
+detect_stack() {
+    if module avail Miniforge3 2>&1 | grep -q Miniforge3; then
+        echo "miniforge"
+    elif module avail Anaconda3 2>&1 | grep -q Anaconda3; then
+        echo "anaconda"
+    else
+        echo ""
+    fi
+}
+
+STACK=$(detect_stack)
+
+if [[ "$STACK" == "miniforge" ]]; then
+    echo "==> Detected Miniforge3 stack"
+    MOD_PYTHON="Miniforge3/24.1.2-0"
+    MOD_GEOS="GEOS/3.12.1-GCC-13.2.0"
+    MOD_PROJ="PROJ/9.3.1-GCCcore-13.2.0"
+    MOD_X11="X11/20240607-GCCcore-13.3.0"
+elif [[ "$STACK" == "anaconda" ]]; then
+    echo "==> Detected Anaconda3 stack"
+    MOD_PYTHON="Anaconda3/2023.07-2"
+    MOD_GEOS="GEOS/3.11.1-GCC-12.2.0"
+    MOD_PROJ="PROJ/9.2.0-GCCcore-12.3.0"
+    MOD_X11="X11/20221110-GCCcore-12.2.0"
+else
+    echo "ERROR: Neither Miniforge3 nor Anaconda3 modules found."
+    echo "Run 'module avail' to see available modules."
+    exit 1
+fi
+
 echo "==> Loading required modules..."
-module load Anaconda3/2023.07-2
-module load GEOS/3.11.1-GCC-12.2.0
-module load PROJ/9.2.0-GCCcore-12.3.0
-module load X11/20221110-GCCcore-12.2.0
+module load "$MOD_PYTHON"
+module load "$MOD_GEOS"
+module load "$MOD_PROJ"
+module load "$MOD_X11"
 
 echo "==> Installing ncview2..."
 python -m pip install --user -e .
@@ -16,26 +48,27 @@ echo "==> Installing geo dependencies (cartopy, cmocean)..."
 python -m pip install --user cartopy cmocean
 
 echo "==> Creating module-loading wrapper..."
-cat > ~/.local/bin/ncview2 << 'WRAPPER_EOF'
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/ncview2 << WRAPPER_EOF
 #!/bin/bash
 # ncview2 wrapper that loads required modules
 
 # Load required modules
-module load Anaconda3/2023.07-2 2>/dev/null
-module load GEOS/3.11.1-GCC-12.2.0 2>/dev/null
-module load PROJ/9.2.0-GCCcore-12.3.0 2>/dev/null
-module load X11/20221110-GCCcore-12.2.0 2>/dev/null
+module load $MOD_PYTHON 2>/dev/null
+module load $MOD_GEOS 2>/dev/null
+module load $MOD_PROJ 2>/dev/null
+module load $MOD_X11 2>/dev/null
 
 # Set DISPLAY if not set (for VS Code Remote)
-if [ -z "$DISPLAY" ]; then
+if [ -z "\$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-# Force Qt to use PySide6 plugins (not Anaconda's Qt5 plugins)
-export QT_PLUGIN_PATH="$HOME/.local/lib/python3.11/site-packages/PySide6/Qt/plugins"
+# Force Qt to use PySide6 plugins (not system Qt5 plugins)
+export QT_PLUGIN_PATH="\$HOME/.local/lib/python3.11/site-packages/PySide6/Qt/plugins"
 
 # Run ncview2
-exec /nird/services/software/nird/sw/software/Anaconda3/2023.07-2/bin/python -m ncview2 "$@"
+exec python -m ncview2 "\$@"
 WRAPPER_EOF
 chmod +x ~/.local/bin/ncview2
 
