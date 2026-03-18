@@ -15,6 +15,7 @@ A modern NetCDF visual browser — a Python reimplementation of
 - **Multiple colormaps**: large library of Python colormaps
 - **Auto-detect geography**: coastlines and land overlay when lat/lon are detected (cartopy)
 - **Cross-platform**: macOS, Linux, Windows via Qt6
+<img width="958" height="790" alt="image" src="https://github.com/user-attachments/assets/daaf6912-2b36-4024-811b-5155d0ce0a80" />
 
 ## Install Local (your own machine, non-HPC)
 
