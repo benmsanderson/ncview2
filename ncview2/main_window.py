@@ -209,13 +209,17 @@ class MainWindow(QMainWindow):
         # Compute global color range
         self._vmin, self._vmax = self.model.get_global_range(varname)
 
-        # Auto-select colormap
-        cmap = default_colormap(self._vmin, self._vmax)
-        idx = self.controls.cmap_combo.findText(cmap)
-        if idx >= 0:
-            self.controls.cmap_combo.blockSignals(True)
-            self.controls.cmap_combo.setCurrentIndex(idx)
-            self.controls.cmap_combo.blockSignals(False)
+        # Auto-select colormap only on first variable; preserve user choice afterward
+        current_cmap = self.controls.cmap_combo.currentText()
+        if not current_cmap:
+            cmap = default_colormap(self._vmin, self._vmax)
+            idx = self.controls.cmap_combo.findText(cmap)
+            if idx >= 0:
+                self.controls.cmap_combo.blockSignals(True)
+                self.controls.cmap_combo.setCurrentIndex(idx)
+                self.controls.cmap_combo.blockSignals(False)
+        else:
+            cmap = current_cmap
 
         # Draw initial frame
         sel = {d: 0 for d in self.scan_dims}
