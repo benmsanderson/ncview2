@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self._area_bbox: tuple[float, float, float, float] | None = None
         self._vmin: float | None = None
         self._vmax: float | None = None
+        self._log_scale: bool = False
         self._is_unstructured: bool = False
         self._playing = False
         self._play_direction = 1
@@ -121,6 +122,7 @@ class MainWindow(QMainWindow):
         self.timeseries.time_clicked.connect(self._on_timeseries_clicked)
         self.controls.dim_index_changed.connect(self._on_dim_changed)
         self.controls.colormap_changed.connect(self._on_colormap_changed)
+        self.controls.log_scale_changed.connect(self._on_log_scale_changed)
 
         anim = self.controls.anim
         anim.play_forward.connect(lambda: self._start_playing(1))
@@ -265,6 +267,8 @@ class MainWindow(QMainWindow):
             y_dim, x_dim = self.spatial_dims
             is_geo = roles.get(y_dim) == "lat" and roles.get(x_dim) == "lon"
             self.spatial.setup(da, cmap=cmap, vmin=self._vmin, vmax=self._vmax, geo=is_geo)
+
+        self.spatial.set_norm(self._log_scale)
 
         # Overlay ocean mask for land-only datasets
         if self.model.is_land_only(varname):
@@ -588,6 +592,10 @@ class MainWindow(QMainWindow):
             self.timer.setInterval(ms)
 
     # ── Colormap ─────────────────────────────────────────────────
+
+    def _on_log_scale_changed(self, enabled):
+        self._log_scale = enabled
+        self.spatial.set_norm(enabled)
 
     def _on_colormap_changed(self, cmap):
         self.spatial.set_colormap(cmap)

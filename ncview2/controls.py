@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QComboBox,
     QSpinBox,
+    QCheckBox,
 )
 from PySide6.QtCore import Signal, Qt
 
@@ -118,6 +119,7 @@ class ControlPanel(QWidget):
 
     dim_index_changed = Signal(str, int)
     colormap_changed = Signal(str)
+    log_scale_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -140,10 +142,13 @@ class ControlPanel(QWidget):
         self.cmap_combo = QComboBox()
         self.cmap_combo.setMinimumWidth(140)
         opts.addWidget(self.cmap_combo)
+        self.log_check = QCheckBox("Log scale")
+        opts.addWidget(self.log_check)
         opts.addStretch()
         self._layout.addLayout(opts)
 
         self.cmap_combo.currentTextChanged.connect(self._on_cmap)
+        self.log_check.toggled.connect(self.log_scale_changed)
         self.dim_sliders: dict[str, DimSlider] = {}
 
     def setup_dims(self, scan_dims, dim_sizes, dim_coord_labels):

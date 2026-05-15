@@ -1,6 +1,7 @@
 """Matplotlib canvas for 2D spatial plots, embedded in Qt."""
 
 import numpy as np
+from matplotlib.colors import LogNorm
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
@@ -42,6 +43,7 @@ class SpatialCanvas(FigureCanvasQTAgg):
         self._cmap = "viridis"
         self._vmin = None
         self._vmax = None
+        self._log_scale = False
         self._lon_sort_idx = None  # reorder index for non-monotonic longitudes
         self._lon_unsort_idx = None  # inverse mapping for click → original index
         # Unstructured grid state
@@ -286,7 +288,10 @@ class SpatialCanvas(FigureCanvasQTAgg):
             self._current_data = np.asarray(da_or_1d.values, dtype=float)
 
         if self._vmin is not None:
-            self.mesh.set_clim(self._vmin, self._vmax)
+            if self._log_scale:
+                self.set_norm(True)
+            else:
+                self.mesh.set_clim(self._vmin, self._vmax)
 
         if self._unstructured:
             title = title_suffix or ""
@@ -301,9 +306,26 @@ class SpatialCanvas(FigureCanvasQTAgg):
     def set_clim(self, vmin, vmax):
         self._vmin, self._vmax = vmin, vmax
         if self.mesh:
-            self.mesh.set_clim(vmin, vmax)
+            if self._log_scale:
+                self.set_norm(True)
+            else:
+                self.mesh.set_clim(vmin, vmax)
             self.draw()
 
+    def set_norm(self, log_scale):
+        """Switch between linear and log color scaling."""
+        self._log_scale = log_scale
+        if self.mesh is None:
+            return
+        if log_scale:
+            safe_vmin = self._vmin if (self._vmin is not None and self._vmin > 0) else 1e-10
+            safe_vmax = self._vmax if (self._vmax is not None and self._vmax > safe_vmin) else safe_vmin * 10
+            self.mesh.set_norm(LogNorm(vmin=safe_vmin, vmax=safe_vmax))
+        else:
+            self.mesh.set_norm(None)
+            if self._vmin is not None and self._vmax is not None:
+                self.mesh.set_clim(self._vmin, self._vmax)
+        self.draw()
     def set_colormap(self, cmap):
         self._cmap = cmap
         if self.mesh:
