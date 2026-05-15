@@ -47,6 +47,17 @@ Then activate and run: `source venv/bin/activate && ncview2 yourfile.nc`
 Both scripts above ask if you want `ncview2 --install`, which creates `~/.local/bin/ncview2`.  
 Add `~/.local/bin` to your PATH to run ncview2 from anywhere without activating the environment.
 
+## Install on Olivia (Sigma2)
+
+```bash
+cd ~
+git clone https://github.com/benmsanderson/ncview2.git
+cd ncview2
+./install_olivia.sh
+```
+
+This uses `hpc-container-wrapper`, which is the Sigma2-supported way to build Python/Conda environments on Olivia.
+
 ## Install on NIRD or Betzy
 
 **Step 1: Clone and install**

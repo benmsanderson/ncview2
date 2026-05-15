@@ -3,6 +3,19 @@
 
 set -e  # Exit on error
 
+if ! command -v conda >/dev/null 2>&1; then
+    cat <<'MSG'
+ERROR: 'conda' is not available in your PATH.
+
+If you are on Olivia/Sigma2, direct conda environments are not supported.
+Use the Olivia installer instead:
+  ./install_olivia.sh
+
+Otherwise, install Miniconda/Anaconda locally and retry.
+MSG
+    exit 127
+fi
+
 echo "==> Creating conda environment 'ncview2'..."
 conda create -y -n ncview2 python=3.11 pyside6 cartopy scipy xarray \
     netcdf4 matplotlib cftime cmocean nc-time-axis h5py
